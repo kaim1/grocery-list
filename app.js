@@ -90,13 +90,14 @@ function renderCatalog() {
   const container = document.getElementById('catalog-container');
   container.textContent = '';
   const term = searchTerm.trim();
+  const noExact = term && !state.items.some(i => i.name === term);
 
   for (const cat of store.sortedCategories(state)) {
     const items = state.items
       .filter(i => i.categoryId === cat.id)
       .filter(i => !term || i.name.includes(term))
       .sort((a, b) => a.name.localeCompare(b.name, 'he'));
-    if (!items.length && !editMode) continue;
+    if (!items.length && !editMode && !noExact) continue;
 
     const section = document.createElement('div');
     section.className = 'category';
@@ -107,7 +108,7 @@ function renderCatalog() {
     const chips = document.createElement('div');
     chips.className = 'chips';
     for (const item of items) chips.append(chip(item));
-    if (term && !state.items.some(i => i.name === term)) {
+    if (noExact) {
       chips.append(addNewChip(term, cat.id));
     }
     section.append(chips);
