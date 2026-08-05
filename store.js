@@ -37,3 +37,60 @@ export function checkOff(state, itemId) {
   if (item) item.lastQty = entry.qty;
   removeFromList(state, itemId);
 }
+
+export function createItem(state, name, categoryId) {
+  const trimmed = name.trim();
+  const existing = state.items.find(i => i.categoryId === categoryId && i.name === trimmed);
+  if (existing) return existing;
+  const item = { id: newId(), name: trimmed, categoryId, lastQty: 1 };
+  state.items.push(item);
+  return item;
+}
+
+export function renameItem(state, itemId, name) {
+  const item = state.items.find(i => i.id === itemId);
+  if (item) item.name = name.trim();
+}
+
+export function moveItem(state, itemId, categoryId) {
+  const item = state.items.find(i => i.id === itemId);
+  if (item) item.categoryId = categoryId;
+}
+
+export function deleteItem(state, itemId) {
+  removeFromList(state, itemId);
+  state.items = state.items.filter(i => i.id !== itemId);
+}
+
+export function addCategory(state, name) {
+  const order = state.categories.length
+    ? Math.max(...state.categories.map(c => c.order)) + 1 : 0;
+  const category = { id: newId(), name: name.trim(), order };
+  state.categories.push(category);
+  return category;
+}
+
+export function renameCategory(state, categoryId, name) {
+  const c = state.categories.find(c => c.id === categoryId);
+  if (c) c.name = name.trim();
+}
+
+export function deleteCategory(state, categoryId, targetCategoryId) {
+  for (const item of state.items) {
+    if (item.categoryId === categoryId) item.categoryId = targetCategoryId;
+  }
+  state.categories = state.categories.filter(c => c.id !== categoryId);
+}
+
+export function sortedCategories(state) {
+  return [...state.categories].sort((a, b) => a.order - b.order);
+}
+
+export function moveCategory(state, categoryId, direction) {
+  const sorted = sortedCategories(state);
+  const idx = sorted.findIndex(c => c.id === categoryId);
+  const swapWith = sorted[idx + direction];
+  if (idx === -1 || !swapWith) return;
+  const c = sorted[idx];
+  [c.order, swapWith.order] = [swapWith.order, c.order];
+}

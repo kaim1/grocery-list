@@ -64,3 +64,53 @@ test('removeFromList removes without touching lastQty', () => {
   assert.equal(store.isOnList(s, id), false);
   assert.equal(s.items.find(i => i.id === id).lastQty, 1);
 });
+
+test('createItem trims, assigns category, dedupes within category', () => {
+  const s = fresh();
+  const veg = s.categories[0].id;
+  const a = store.createItem(s, '  עגבניות ', veg);
+  assert.equal(a.name, 'עגבניות');
+  assert.equal(a.categoryId, veg);
+  const b = store.createItem(s, 'עגבניות', veg);
+  assert.equal(b.id, a.id);
+  assert.equal(s.items.filter(i => i.name === 'עגבניות').length, 1);
+});
+
+test('deleteItem removes from catalog and list', () => {
+  const s = fresh();
+  const id = idOf(s, 'חלב');
+  store.addToList(s, id);
+  store.deleteItem(s, id);
+  assert.equal(s.items.some(i => i.id === id), false);
+  assert.deepEqual(s.list, []);
+});
+
+test('rename and move item', () => {
+  const s = fresh();
+  const id = idOf(s, 'מלפפונים');
+  store.renameItem(s, id, 'מלפפון בייבי');
+  store.moveItem(s, id, s.categories[1].id);
+  const it = s.items.find(i => i.id === id);
+  assert.equal(it.name, 'מלפפון בייבי');
+  assert.equal(it.categoryId, s.categories[1].id);
+});
+
+test('category add/rename/reorder/delete-with-move', () => {
+  const s = fresh();
+  const frozen = store.addCategory(s, 'קפואים');
+  assert.equal(frozen.order, 2);
+  store.renameCategory(s, frozen.id, 'מקפיא');
+  assert.equal(s.categories.find(c => c.id === frozen.id).name, 'מקפיא');
+
+  store.moveCategory(s, frozen.id, -1);
+  assert.deepEqual(store.sortedCategories(s).map(c => c.name),
+    ['ירקות', 'מקפיא', 'מוצרי חלב']);
+  store.moveCategory(s, store.sortedCategories(s)[0].id, -1); // no-op at edge
+  assert.equal(store.sortedCategories(s)[0].name, 'ירקות');
+
+  const veg = s.categories.find(c => c.name === 'ירקות');
+  const dairy = s.categories.find(c => c.name === 'מוצרי חלב');
+  store.deleteCategory(s, veg.id, dairy.id);
+  assert.equal(s.categories.some(c => c.id === veg.id), false);
+  assert.equal(s.items.find(i => i.name === 'מלפפונים').categoryId, dairy.id);
+});
