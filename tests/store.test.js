@@ -114,3 +114,40 @@ test('category add/rename/reorder/delete-with-move', () => {
   assert.equal(s.categories.some(c => c.id === veg.id), false);
   assert.equal(s.items.find(i => i.name === 'מלפפונים').categoryId, dairy.id);
 });
+
+test('serialize/load round-trip preserves state', () => {
+  const s = fresh();
+  store.addToList(s, idOf(s, 'חלב'));
+  store.setQty(s, idOf(s, 'חלב'), 3);
+  const { state: s2, corrupt } = store.load(store.serialize(s), seed);
+  assert.equal(corrupt, false);
+  assert.deepEqual(s2, s);
+});
+
+test('load(null) returns fresh seed state, not corrupt', () => {
+  const { state: s, corrupt } = store.load(null, seed);
+  assert.equal(corrupt, false);
+  assert.equal(s.items.length, 2);
+});
+
+test('load of invalid JSON or wrong shape reports corrupt', () => {
+  for (const raw of ['{not json', '"a string"', '{"version":2}',
+                     JSON.stringify({ version: 1, categories: [], items: [], list: 5 })]) {
+    const { state: s, corrupt } = store.load(raw, seed);
+    assert.equal(corrupt, true, raw);
+    assert.equal(s.items.length, 2); // fell back to seed
+  }
+});
+
+test('load drops orphan list entries but flags orphan items as corrupt', () => {
+  const s = fresh();
+  const good = store.serialize({ ...s, list: [{ itemId: 'ghost', qty: 2 }] });
+  const r1 = store.load(good, seed);
+  assert.equal(r1.corrupt, false);
+  assert.deepEqual(r1.state.list, []);
+
+  const bad = JSON.parse(store.serialize(s));
+  bad.items[0].categoryId = 'ghost';
+  const r2 = store.load(JSON.stringify(bad), seed);
+  assert.equal(r2.corrupt, true);
+});

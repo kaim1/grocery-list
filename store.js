@@ -94,3 +94,27 @@ export function moveCategory(state, categoryId, direction) {
   const c = sorted[idx];
   [c.order, swapWith.order] = [swapWith.order, c.order];
 }
+
+export function serialize(state) { return JSON.stringify(state); }
+
+export function load(raw, seed) {
+  if (raw == null || raw === '') return { state: createState(seed), corrupt: false };
+  let doc;
+  try { doc = JSON.parse(raw); } catch { return { state: createState(seed), corrupt: true }; }
+  if (!isValidDoc(doc)) return { state: createState(seed), corrupt: true };
+  doc.list = doc.list.filter(e => doc.items.some(i => i.id === e.itemId));
+  return { state: doc, corrupt: false };
+}
+
+function isValidDoc(doc) {
+  if (typeof doc !== 'object' || doc === null || doc.version !== 1) return false;
+  if (![doc.categories, doc.items, doc.list].every(Array.isArray)) return false;
+  const catOk = doc.categories.every(c =>
+    typeof c.id === 'string' && typeof c.name === 'string' && typeof c.order === 'number');
+  const itemOk = doc.items.every(i =>
+    typeof i.id === 'string' && typeof i.name === 'string' &&
+    doc.categories.some(c => c.id === i.categoryId));
+  const listOk = doc.list.every(e =>
+    typeof e.itemId === 'string' && typeof e.qty === 'number');
+  return catOk && itemOk && listOk;
+}
