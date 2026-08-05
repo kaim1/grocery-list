@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2e7d32">
+  <title>מצרכים</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-180.png">
+</head>
+<body>
+  <header>
+    <h1>מצרכים</h1>
+    <nav>
+      <button id="tab-list" class="tab active">הרשימה <span id="tab-list-count"></span></button>
+      <button id="tab-catalog" class="tab">הקטלוג</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="screen-list">
+      <div id="list-container"></div>
+      <p id="list-empty" class="empty" hidden>הרשימה ריקה — הוסיפו פריטים מהקטלוג</p>
+    </section>
+
+    <section id="screen-catalog" hidden>
+      <div class="catalog-bar">
+        <input id="search" type="search" placeholder="חיפוש או פריט חדש…" autocomplete="off">
+        <button id="btn-edit-mode" title="עריכה">עריכה</button>
+      </div>
+      <div id="catalog-container"></div>
+      <div class="settings">
+        <button id="btn-export">גיבוי (ייצוא)</button>
+        <button id="btn-import">שחזור (ייבוא)</button>
+        <input id="import-file" type="file" accept="application/json" hidden>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
