@@ -55,5 +55,9 @@ main { padding: .75rem .75rem calc(1rem + env(safe-area-inset-bottom)); }
 }
 .chip.on-list { background: #2e7d32; color: #fff; border-color: #2e7d32; }
 .add-new { border-style: dashed; color: #2e7d32; }
+.cat-ctl {
+  border: 1px solid #cfcfc6; background: #fff; border-radius: 6px;
+  font-size: .8rem; margin-inline-start: .35rem; padding: .1rem .4rem;
+}
 .settings { display: flex; gap: .5rem; margin-top: 1.5rem; }
 .settings button { font: inherit; padding: .45rem .8rem; border: 1px solid #ccc; border-radius: 8px; background: #fff; }

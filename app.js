@@ -105,6 +105,27 @@ function renderCatalog() {
     h.textContent = cat.name;
     section.append(h);
 
+    if (editMode) {
+      for (const [label, fn] of [
+        ['↑', () => store.moveCategory(state, cat.id, -1)],
+        ['↓', () => store.moveCategory(state, cat.id, +1)],
+        ['✎', () => {
+          const name = prompt('שם קטגוריה:', cat.name);
+          if (name && name.trim()) store.renameCategory(state, cat.id, name);
+        }],
+        ['🗑', () => {
+          const target = pickCategory(`למחוק את "${cat.name}". להעביר את הפריטים אל:`, cat.id);
+          if (target) store.deleteCategory(state, cat.id, target);
+        }],
+      ]) {
+        const btn = document.createElement('button');
+        btn.textContent = label;
+        btn.className = 'cat-ctl';
+        btn.onclick = () => { fn(); save(); render(); };
+        h.append(btn);
+      }
+    }
+
     const chips = document.createElement('div');
     chips.className = 'chips';
     for (const item of items) chips.append(chip(item));
@@ -114,6 +135,17 @@ function renderCatalog() {
     section.append(chips);
     container.append(section);
   }
+
+  if (editMode) {
+    const add = document.createElement('button');
+    add.className = 'chip add-new';
+    add.textContent = '+ קטגוריה חדשה';
+    add.onclick = () => {
+      const name = prompt('שם הקטגוריה החדשה:', '');
+      if (name && name.trim()) { store.addCategory(state, name); save(); render(); }
+    };
+    container.append(add);
+  }
 }
 
 function chip(item) {
@@ -122,12 +154,34 @@ function chip(item) {
   b.textContent = item.name;
   b.classList.toggle('on-list', store.isOnList(state, item.id));
   b.onclick = () => {
-    if (editMode) return;
+    if (editMode) return openItemEditor(item);
     if (store.isOnList(state, item.id)) store.removeFromList(state, item.id);
     else store.addToList(state, item.id);
     save(); render();
   };
   return b;
+}
+
+function openItemEditor(item) {
+  const action = prompt(
+    `${item.name}\n1 = שינוי שם\n2 = העברת קטגוריה\n3 = מחיקה`, '');
+  if (action === '1') {
+    const name = prompt('שם חדש:', item.name);
+    if (name && name.trim()) store.renameItem(state, item.id, name);
+  } else if (action === '2') {
+    const target = pickCategory(`להעביר את "${item.name}" אל:`, item.categoryId);
+    if (target) store.moveItem(state, item.id, target);
+  } else if (action === '3') {
+    if (confirm(`למחוק את "${item.name}" לצמיתות?`)) store.deleteItem(state, item.id);
+  } else return;
+  save(); render();
+}
+
+function pickCategory(title, excludeId) {
+  const cats = store.sortedCategories(state).filter(c => c.id !== excludeId);
+  const menu = cats.map((c, i) => `${i + 1} = ${c.name}`).join('\n');
+  const n = parseInt(prompt(`${title}\n${menu}`, ''), 10);
+  return cats[n - 1]?.id ?? null;
 }
 
 function addNewChip(name, categoryId) {
@@ -143,6 +197,12 @@ function addNewChip(name, categoryId) {
   };
   return b;
 }
+
+document.getElementById('btn-edit-mode').onclick = () => {
+  editMode = !editMode;
+  document.getElementById('btn-edit-mode').classList.toggle('active', editMode);
+  renderCatalog();
+};
 
 document.getElementById('search').oninput = e => {
   searchTerm = e.target.value;
