@@ -228,6 +228,7 @@ document.getElementById('import-file').onchange = async e => {
   const file = e.target.files[0];
   if (!file) return;
   const raw = await file.text();
+  if (!raw.trim()) { alert('הקובץ אינו גיבוי תקין'); return; }
   const { state: imported, corrupt } = store.load(raw, SEED);
   if (corrupt) { alert('הקובץ אינו גיבוי תקין'); return; }
   if (!confirm('לשחזר מהגיבוי? הנתונים הנוכחיים יוחלפו.')) return;

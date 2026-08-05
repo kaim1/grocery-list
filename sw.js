@@ -4,7 +4,8 @@ const ASSETS = ['.', 'index.html', 'style.css', 'app.js', 'store.js', 'seed.js',
   'manifest.json', 'icon-180.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(ASSETS)));
+  e.waitUntil(caches.open(VERSION).then(c =>
+    c.addAll(ASSETS.map(u => new Request(u, { cache: 'reload' })))));
   self.skipWaiting();
 });
 
