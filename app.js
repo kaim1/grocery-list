@@ -211,4 +211,31 @@ document.getElementById('search').oninput = e => {
 
 document.getElementById('tab-list').onclick = () => showScreen('list');
 document.getElementById('tab-catalog').onclick = () => showScreen('catalog');
+
+document.getElementById('btn-export').onclick = () => {
+  const blob = new Blob([store.serialize(state)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'groceries-backup.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+document.getElementById('btn-import').onclick = () =>
+  document.getElementById('import-file').click();
+
+document.getElementById('import-file').onchange = async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const raw = await file.text();
+  const { state: imported, corrupt } = store.load(raw, SEED);
+  if (corrupt) { alert('הקובץ אינו גיבוי תקין'); return; }
+  if (!confirm('לשחזר מהגיבוי? הנתונים הנוכחיים יוחלפו.')) return;
+  state = imported;
+  save(); render();
+  e.target.value = '';
+};
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
+
 boot();
