@@ -83,7 +83,70 @@ function listRow(entry) {
   return row;
 }
 
-function renderCatalog() { /* Task 7 */ }
+let searchTerm = '';
+let editMode = false;
+
+function renderCatalog() {
+  const container = document.getElementById('catalog-container');
+  container.textContent = '';
+  const term = searchTerm.trim();
+
+  for (const cat of store.sortedCategories(state)) {
+    const items = state.items
+      .filter(i => i.categoryId === cat.id)
+      .filter(i => !term || i.name.includes(term))
+      .sort((a, b) => a.name.localeCompare(b.name, 'he'));
+    if (!items.length && !editMode) continue;
+
+    const section = document.createElement('div');
+    section.className = 'category';
+    const h = document.createElement('h2');
+    h.textContent = cat.name;
+    section.append(h);
+
+    const chips = document.createElement('div');
+    chips.className = 'chips';
+    for (const item of items) chips.append(chip(item));
+    if (term && !state.items.some(i => i.name === term)) {
+      chips.append(addNewChip(term, cat.id));
+    }
+    section.append(chips);
+    container.append(section);
+  }
+}
+
+function chip(item) {
+  const b = document.createElement('button');
+  b.className = 'chip';
+  b.textContent = item.name;
+  b.classList.toggle('on-list', store.isOnList(state, item.id));
+  b.onclick = () => {
+    if (editMode) return;
+    if (store.isOnList(state, item.id)) store.removeFromList(state, item.id);
+    else store.addToList(state, item.id);
+    save(); render();
+  };
+  return b;
+}
+
+function addNewChip(name, categoryId) {
+  const b = document.createElement('button');
+  b.className = 'chip add-new';
+  b.textContent = `+ ${name}`;
+  b.onclick = () => {
+    const item = store.createItem(state, name, categoryId);
+    store.addToList(state, item.id);
+    searchTerm = '';
+    document.getElementById('search').value = '';
+    save(); render();
+  };
+  return b;
+}
+
+document.getElementById('search').oninput = e => {
+  searchTerm = e.target.value;
+  renderCatalog();
+};
 
 document.getElementById('tab-list').onclick = () => showScreen('list');
 document.getElementById('tab-catalog').onclick = () => showScreen('catalog');
