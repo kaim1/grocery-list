@@ -107,21 +107,14 @@ function renderCatalog() {
 
     if (editMode) {
       for (const [label, fn] of [
-        ['↑', () => store.moveCategory(state, cat.id, -1)],
-        ['↓', () => store.moveCategory(state, cat.id, +1)],
-        ['✎', () => {
-          const name = prompt('שם קטגוריה:', cat.name);
-          if (name && name.trim()) store.renameCategory(state, cat.id, name);
-        }],
-        ['🗑', () => {
-          const target = pickCategory(`למחוק את "${cat.name}". להעביר את הפריטים אל:`, cat.id);
-          if (target) store.deleteCategory(state, cat.id, target);
-        }],
+        ['↑', () => { store.moveCategory(state, cat.id, -1); saveAndRender(); }],
+        ['↓', () => { store.moveCategory(state, cat.id, +1); saveAndRender(); }],
+        ['✎', () => openCategoryEditor(cat)],
       ]) {
         const btn = document.createElement('button');
         btn.textContent = label;
         btn.className = 'cat-ctl';
-        btn.onclick = () => { fn(); save(); render(); };
+        btn.onclick = fn;
         h.append(btn);
       }
     }
@@ -140,10 +133,7 @@ function renderCatalog() {
     const add = document.createElement('button');
     add.className = 'chip add-new';
     add.textContent = '+ קטגוריה חדשה';
-    add.onclick = () => {
-      const name = prompt('שם הקטגוריה החדשה:', '');
-      if (name && name.trim()) { store.addCategory(state, name); save(); render(); }
-    };
+    add.onclick = openAddCategory;
     container.append(add);
   }
 }
@@ -162,26 +152,127 @@ function chip(item) {
   return b;
 }
 
-function openItemEditor(item) {
-  const action = prompt(
-    `${item.name}\n1 = שינוי שם\n2 = העברת קטגוריה\n3 = מחיקה`, '');
-  if (action === '1') {
-    const name = prompt('שם חדש:', item.name);
-    if (name && name.trim()) store.renameItem(state, item.id, name);
-  } else if (action === '2') {
-    const target = pickCategory(`להעביר את "${item.name}" אל:`, item.categoryId);
-    if (target) store.moveItem(state, item.id, target);
-  } else if (action === '3') {
-    if (confirm(`למחוק את "${item.name}" לצמיתות?`)) store.deleteItem(state, item.id);
-  } else return;
-  save(); render();
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text) n.textContent = text;
+  return n;
 }
 
-function pickCategory(title, excludeId) {
-  const cats = store.sortedCategories(state).filter(c => c.id !== excludeId);
-  const menu = cats.map((c, i) => `${i + 1} = ${c.name}`).join('\n');
-  const n = parseInt(prompt(`${title}\n${menu}`, ''), 10);
-  return cats[n - 1]?.id ?? null;
+function openSheet(build) {
+  const body = document.getElementById('sheet-body');
+  body.textContent = '';
+  build(body);
+  document.getElementById('sheet').showModal();
+}
+
+function closeSheet() { document.getElementById('sheet').close(); }
+
+function saveAndRender() { save(); render(); }
+
+function catPicker(selectedId, onPick, excludeId) {
+  const wrap = el('div', 'sheet-cats');
+  for (const c of store.sortedCategories(state)) {
+    if (c.id === excludeId) continue;
+    const b = el('button', 'cat-pick', c.name);
+    b.classList.toggle('selected', c.id === selectedId);
+    b.onclick = () => {
+      for (const x of wrap.children) x.classList.remove('selected');
+      b.classList.add('selected');
+      onPick(c.id);
+    };
+    wrap.append(b);
+  }
+  return wrap;
+}
+
+function openItemEditor(item) {
+  openSheet(body => {
+    let chosenCat = item.categoryId;
+    const name = el('input', 'sheet-field');
+    name.value = item.name;
+    const saveBtn = el('button', 'btn-primary', 'שמירה');
+    saveBtn.onclick = () => {
+      if (name.value.trim()) store.renameItem(state, item.id, name.value);
+      store.moveItem(state, item.id, chosenCat);
+      closeSheet(); saveAndRender();
+    };
+    const cancel = el('button', 'btn-quiet', 'ביטול');
+    cancel.onclick = closeSheet;
+    const del = el('button', 'btn-danger', 'מחיקה מהקטלוג');
+    del.onclick = () => {
+      if (!del.classList.contains('arm')) {
+        del.classList.add('arm');
+        del.textContent = 'בטוח? נגיעה נוספת מוחקת לצמיתות';
+        return;
+      }
+      store.deleteItem(state, item.id);
+      closeSheet(); saveAndRender();
+    };
+    const actions = el('div', 'sheet-actions');
+    actions.append(saveBtn, cancel);
+    body.append(
+      el('div', 'sheet-title', item.name),
+      el('div', 'sheet-label', 'שם'),
+      name,
+      el('div', 'sheet-label', 'קטגוריה'),
+      catPicker(chosenCat, id => { chosenCat = id; }),
+      actions,
+      del,
+    );
+  });
+}
+
+function openCategoryEditor(cat) {
+  openSheet(body => {
+    const name = el('input', 'sheet-field');
+    name.value = cat.name;
+    const saveBtn = el('button', 'btn-primary', 'שמירה');
+    saveBtn.onclick = () => {
+      if (name.value.trim()) store.renameCategory(state, cat.id, name.value);
+      closeSheet(); saveAndRender();
+    };
+    const cancel = el('button', 'btn-quiet', 'ביטול');
+    cancel.onclick = closeSheet;
+    const actions = el('div', 'sheet-actions');
+    actions.append(saveBtn, cancel);
+    const del = el('button', 'btn-danger', 'מחיקת הקטגוריה');
+    const delArea = el('div');
+    del.onclick = () => {
+      if (state.categories.length < 2) return;
+      delArea.textContent = '';
+      delArea.append(el('div', 'sheet-label', 'להעביר את הפריטים אל:'));
+      delArea.append(catPicker(null, targetId => {
+        store.deleteCategory(state, cat.id, targetId);
+        closeSheet(); saveAndRender();
+      }, cat.id));
+    };
+    body.append(
+      el('div', 'sheet-title', `קטגוריה: ${cat.name}`),
+      el('div', 'sheet-label', 'שם'),
+      name,
+      actions,
+      del,
+      delArea,
+    );
+  });
+}
+
+function openAddCategory() {
+  openSheet(body => {
+    const name = el('input', 'sheet-field');
+    name.placeholder = 'שם הקטגוריה';
+    const saveBtn = el('button', 'btn-primary', 'הוספה');
+    saveBtn.onclick = () => {
+      if (name.value.trim()) { store.addCategory(state, name.value); saveAndRender(); }
+      closeSheet();
+    };
+    const cancel = el('button', 'btn-quiet', 'ביטול');
+    cancel.onclick = closeSheet;
+    const actions = el('div', 'sheet-actions');
+    actions.append(saveBtn, cancel);
+    body.append(el('div', 'sheet-title', 'קטגוריה חדשה'), name, actions);
+  });
 }
 
 function addNewChip(name, categoryId) {
@@ -239,6 +330,10 @@ document.getElementById('import-file').onchange = async e => {
   state = imported;
   save(); render();
   e.target.value = '';
+};
+
+document.getElementById('sheet').onclick = e => {
+  if (e.target === document.getElementById('sheet')) closeSheet();
 };
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
