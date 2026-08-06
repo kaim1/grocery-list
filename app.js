@@ -28,7 +28,7 @@ function render() {
   renderList();
   renderCatalog();
   const n = state.list.length;
-  document.getElementById('tab-list-count').textContent = n ? `(${n})` : '';
+  document.getElementById('tab-list-count').textContent = n || '';
 }
 
 function renderList() {
