@@ -211,6 +211,10 @@ document.getElementById('search').oninput = e => {
 
 document.getElementById('tab-list').onclick = () => showScreen('list');
 document.getElementById('tab-catalog').onclick = () => showScreen('catalog');
+document.getElementById('btn-add').onclick = () => {
+  showScreen('catalog');
+  document.getElementById('search').focus();
+};
 
 document.getElementById('btn-export').onclick = () => {
   const blob = new Blob([store.serialize(state)], { type: 'application/json' });
