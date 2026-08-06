@@ -92,12 +92,18 @@ function renderCatalog() {
   const term = searchTerm.trim();
   const noExact = term && !state.items.some(i => i.name === term);
 
+  if (noExact) {
+    const add = el('button', 'chip add-new add-item', `+ הוספת «${term}»`);
+    add.onclick = () => openAddItemSheet(term);
+    container.append(add);
+  }
+
   for (const cat of store.sortedCategories(state)) {
     const items = state.items
       .filter(i => i.categoryId === cat.id)
       .filter(i => !term || i.name.includes(term))
       .sort((a, b) => a.name.localeCompare(b.name, 'he'));
-    if (!items.length && !editMode && !noExact) continue;
+    if (!items.length && !editMode) continue;
 
     const section = document.createElement('div');
     section.className = 'category';
@@ -122,9 +128,6 @@ function renderCatalog() {
     const chips = document.createElement('div');
     chips.className = 'chips';
     for (const item of items) chips.append(chip(item));
-    if (noExact) {
-      chips.append(addNewChip(term, cat.id));
-    }
     section.append(chips);
     container.append(section);
   }
@@ -275,18 +278,34 @@ function openAddCategory() {
   });
 }
 
-function addNewChip(name, categoryId) {
-  const b = document.createElement('button');
-  b.className = 'chip add-new';
-  b.textContent = `+ ${name}`;
-  b.onclick = () => {
-    const item = store.createItem(state, name, categoryId);
-    store.addToList(state, item.id);
-    searchTerm = '';
-    document.getElementById('search').value = '';
-    save(); render();
-  };
-  return b;
+function openAddItemSheet(initialName) {
+  openSheet(body => {
+    let chosenCat = null;
+    const name = el('input', 'sheet-field');
+    name.value = initialName;
+    const saveBtn = el('button', 'btn-primary', 'הוספה לרשימה');
+    saveBtn.disabled = true;
+    saveBtn.onclick = () => {
+      if (!name.value.trim() || !chosenCat) return;
+      const item = store.createItem(state, name.value, chosenCat);
+      store.addToList(state, item.id);
+      searchTerm = '';
+      document.getElementById('search').value = '';
+      closeSheet(); saveAndRender();
+    };
+    const cancel = el('button', 'btn-quiet', 'ביטול');
+    cancel.onclick = closeSheet;
+    const actions = el('div', 'sheet-actions');
+    actions.append(saveBtn, cancel);
+    body.append(
+      el('div', 'sheet-title', 'מצרך חדש'),
+      el('div', 'sheet-label', 'שם'),
+      name,
+      el('div', 'sheet-label', 'קטגוריה'),
+      catPicker(null, id => { chosenCat = id; saveBtn.disabled = false; }),
+      actions,
+    );
+  });
 }
 
 document.getElementById('btn-edit-mode').onclick = () => {
