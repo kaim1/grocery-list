@@ -92,6 +92,24 @@ test('ordinary app URLs are not mistaken for authentication redirects', async ()
   assert.equal(cloud.session, null);
 });
 
+test('expired email links report an error without requests or changing an existing session', async () => {
+  const disk = storage();
+  const cloud = new Cloud(config, disk, async () => { throw new Error('Unexpected network request'); });
+  cloud.saveSession(structuredClone(session));
+  await assert.rejects(cloud.consumeRedirect(
+    'https://kaim1.github.io/grocery-list/#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired'),
+  /קישור ההתחברות אינו תקף או שפג תוקפו/);
+  assert.equal(cloud.session.access_token, session.access_token);
+});
+
+test('incomplete login links report an error instead of silently opening guest mode', async () => {
+  const cloud = new Cloud(config, storage(), async () => { throw new Error('Unexpected network request'); });
+  for (const fragment of ['access_token=only-access', 'refresh_token=only-refresh']) {
+    await assert.rejects(cloud.consumeRedirect(`https://kaim1.github.io/grocery-list/#${fragment}`), /קישור ההתחברות אינו שלם/);
+  }
+  assert.equal(cloud.session, null);
+});
+
 test('first-time signup links are consumed like returning-user magic links', async () => {
   const cloud = new Cloud(config, storage(), async () => Response.json({ id: 'new-owner', email: 'new@example.com' }));
   const consumed = await cloud.consumeRedirect(

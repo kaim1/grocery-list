@@ -53,9 +53,16 @@ export class Cloud {
   async consumeRedirect(url) {
     const params = new URL(url).hash.slice(1);
     const values = new URLSearchParams(params);
+    if (values.has('error') || values.has('error_code')) {
+      if (values.get('error_code') === 'otp_expired') {
+        throw new Error('קישור ההתחברות אינו תקף או שפג תוקפו. יש לפתוח את הקישור מהמייל האחרון; קישור שכבר נוצל לא יעבוד שוב.');
+      }
+      throw new Error('שירות ההתחברות דחה את הקישור. ההתחברות לא הושלמה.');
+    }
     const accessToken = values.get('access_token');
     const refreshToken = values.get('refresh_token');
-    if (!accessToken || !refreshToken) return false;
+    if (!values.has('access_token') && !values.has('refresh_token')) return false;
+    if (!accessToken || !refreshToken) throw new Error('קישור ההתחברות אינו שלם. יש לפתוח את הקישור המלא מהמייל.');
     const user = await this.request('/auth/v1/user', undefined, accessToken);
     this.saveSession({
       access_token: accessToken,

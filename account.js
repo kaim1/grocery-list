@@ -130,16 +130,18 @@ export function initializeAccount(onState) {
     }
   });
 
-  if (location.hash.includes('access_token=')) {
+  const callback = new URLSearchParams(location.hash.slice(1));
+  if (['access_token', 'refresh_token', 'error', 'error_code'].some(key => callback.has(key))) {
     main.inert = true;
     setStatus('משלים התחברות…');
     cloud.consumeRedirect(location.href).then(consumed => {
       if (consumed) history.replaceState(null, '', `${location.pathname}${location.search}`);
       boot();
     }).catch(error => {
-      main.inert = false;
+      boot();
       setStatus(`ההתחברות נכשלה — ${error.message}`);
-      updateAccount();
+      message.textContent = error.message;
+      panel.showModal();
     });
   } else boot();
   return {
