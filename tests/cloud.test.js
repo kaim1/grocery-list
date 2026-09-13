@@ -57,10 +57,13 @@ test('expired sessions refresh before fetching and never issue requests for a di
 
 test('magic-link request includes the exact app URL so login returns to the initiating device', async () => {
   const cloud = new Cloud(config, storage(), async (url, options) => {
-    assert.equal(url, 'https://example.supabase.co/auth/v1/otp');
+    const requestUrl = new URL(url);
+    assert.equal(requestUrl.origin + requestUrl.pathname, 'https://example.supabase.co/auth/v1/otp');
+    // Supabase Auth reads redirect_to from the query, not email_redirect_to in JSON.
+    assert.equal(requestUrl.searchParams.get('redirect_to'), 'https://kaim1.github.io/grocery-list/');
+    assert.equal(options.method, 'POST');
     assert.deepEqual(JSON.parse(options.body), {
       email: 'a@example.com', create_user: true,
-      email_redirect_to: 'https://kaim1.github.io/grocery-list/',
     });
     return Response.json({});
   });

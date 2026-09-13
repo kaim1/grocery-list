@@ -45,8 +45,8 @@ export class Cloud {
 
   async sendCode(email) { await this.request('/auth/v1/otp', { email, create_user: true }); }
   async sendLink(email, redirectTo) {
-    await this.request('/auth/v1/otp', {
-      email, create_user: true, email_redirect_to: redirectTo,
+    await this.request(`/auth/v1/otp?${new URLSearchParams({ redirect_to: redirectTo })}`, {
+      email, create_user: true,
     });
   }
 
