@@ -12,6 +12,7 @@
 }
 
 * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
 html { font-size: 17px; }
 body {
   font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans Hebrew", Arial, sans-serif;
@@ -28,6 +29,17 @@ header {
   padding: calc(.8rem + env(safe-area-inset-top)) 1rem .7rem;
 }
 h1 { font-size: 1.45rem; font-weight: 700; letter-spacing: -.01em; margin-bottom: .65rem; }
+.heading-row { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.account-button { background: transparent; border: 0; color: var(--accent); font-size: .8rem; padding: .5rem 0; }
+#sync-status { font-size: .75rem; color: var(--muted); margin-top: .6rem; overflow-wrap: anywhere; }
+#account-panel { margin: auto; width: min(94vw, 440px); max-height: 90dvh; border: 0; border-radius: 20px; color: var(--ink); background: var(--surface); }
+#account-panel::backdrop { background: rgba(23, 33, 27, .35); }
+.account-content { display: grid; gap: 1rem; padding: 1.25rem; line-height: 1.6; }
+.account-content h2 { font-size: 1.15rem; }
+.account-content p { font-size: .9rem; overflow-wrap: anywhere; }
+.account-form { display: grid; gap: .6rem; margin-top: 1rem; }
+.account-form label { font-size: .85rem; }
+#account-message:empty { display: none; }
 nav {
   display: flex; gap: .25rem;
   background: var(--field); border-radius: 999px; padding: .25rem;
@@ -38,12 +50,19 @@ nav {
   padding: .45rem .5rem; border-radius: 999px; font-weight: 600; font-size: .95rem;
 }
 .tab.active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
-#tab-list-count {
+#tab-list-count, #tab-todos-count {
   min-width: 1.35rem; padding: .05rem .35rem; border-radius: 999px;
   background: var(--accent); color: var(--accent-ink);
   font-size: .75rem; font-weight: 700;
 }
-#tab-list-count:empty { display: none; }
+#tab-list-count:empty, #tab-todos-count:empty { display: none; }
+
+.todo-form { display: flex; gap: .5rem; margin-bottom: 1rem; }
+.todo-form input { min-width: 0; flex: 1; }
+.todo-form button { flex: none; padding-inline: 1rem; }
+.todo-title { border: 0; background: transparent; text-align: start; overflow-wrap: anywhere; min-width: 0; padding-block: .3rem; }
+.todo-row.done .todo-title { color: var(--muted); text-decoration: line-through; }
+#todos-completed summary { cursor: pointer; color: var(--muted); padding: 1rem .2rem; }
 
 main { padding: 1rem .9rem calc(1.25rem + env(safe-area-inset-bottom)); }
 .empty { color: var(--muted); text-align: center; padding: 3rem 1rem; line-height: 1.6; }

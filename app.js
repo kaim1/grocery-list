@@ -1,34 +1,88 @@
 // app.js — UI wiring. All state changes go through store.js, then save().
 import * as store from './store.js';
 import { SEED } from './seed.js';
+import { initializeAccount } from './account.js';
 
-const KEY = 'groceries-v1';
-const BACKUP_KEY = 'groceries-corrupt-backup';
 let state;
+let account;
 
-function save() { localStorage.setItem(KEY, store.serialize(state)); }
+function save() {
+  try { state = account.save(state); }
+  catch (error) { alert(`לא ניתן לשמור: ${error.message}`); }
+}
 
 function boot() {
-  const raw = localStorage.getItem(KEY);
-  const { state: loaded, corrupt } = store.load(raw, SEED);
-  if (corrupt) localStorage.setItem(BACKUP_KEY, raw);
-  state = loaded;
-  save();
-  render();
+  account = initializeAccount(loaded => { state = loaded; render(); });
 }
 
 export function showScreen(name) {
-  document.getElementById('screen-list').hidden = name !== 'list';
-  document.getElementById('screen-catalog').hidden = name !== 'catalog';
-  document.getElementById('tab-list').classList.toggle('active', name === 'list');
-  document.getElementById('tab-catalog').classList.toggle('active', name === 'catalog');
+  for (const screen of ['list', 'catalog', 'todos']) {
+    document.getElementById(`screen-${screen}`).hidden = name !== screen;
+    document.getElementById(`tab-${screen}`).classList.toggle('active', name === screen);
+    document.getElementById(`tab-${screen}`).setAttribute('aria-current', name === screen ? 'page' : 'false');
+  }
 }
 
 function render() {
   renderList();
   renderCatalog();
+  renderTodos();
   const n = state.list.length;
   document.getElementById('tab-list-count').textContent = n || '';
+}
+
+function renderTodos() {
+  const active = document.getElementById('todos-container');
+  const completed = document.getElementById('todos-completed-container');
+  active.replaceChildren();
+  completed.replaceChildren();
+  for (const todo of state.todos) {
+    const row = el('div', `row todo-row${todo.done ? ' done' : ''}`);
+    const check = document.createElement('input');
+    check.type = 'checkbox';
+    check.checked = todo.done;
+    check.setAttribute('aria-label', `${todo.done ? 'פתיחה מחדש' : 'סיום'}: ${todo.title}`);
+    check.onchange = () => { store.setTodoDone(state, todo.id, check.checked); saveAndRender(); };
+    const title = el('button', 'name todo-title', todo.title);
+    title.setAttribute('aria-label', `עריכת משימה: ${todo.title}`);
+    title.onclick = () => openTodoEditor(todo);
+    row.append(check, title);
+    (todo.done ? completed : active).append(row);
+  }
+  const count = state.todos.filter(t => !t.done).length;
+  document.getElementById('tab-todos-count').textContent = count || '';
+  document.getElementById('todos-empty').hidden = count > 0;
+  document.getElementById('todos-completed').hidden = completed.childElementCount === 0;
+  document.getElementById('todos-completed-label').textContent = `הושלמו (${completed.childElementCount})`;
+}
+
+function openTodoEditor(todo) {
+  openSheet(body => {
+    const title = el('input', 'sheet-field');
+    title.value = todo.title;
+    title.maxLength = 500;
+    title.setAttribute('aria-label', 'תוכן המשימה');
+    const saveBtn = el('button', 'btn-primary', 'שמירה');
+    saveBtn.onclick = () => {
+      if (!title.value.trim()) return;
+      store.renameTodo(state, todo.id, title.value);
+      closeSheet(); saveAndRender();
+    };
+    const cancel = el('button', 'btn-quiet', 'ביטול');
+    cancel.onclick = closeSheet;
+    const del = el('button', 'btn-danger', 'מחיקת המשימה');
+    del.onclick = () => {
+      if (!del.classList.contains('arm')) {
+        del.classList.add('arm');
+        del.textContent = 'לחצו שוב לאישור המחיקה';
+        return;
+      }
+      store.deleteTodo(state, todo.id); closeSheet(); saveAndRender();
+    };
+    const actions = el('div', 'sheet-actions');
+    actions.append(saveBtn, cancel);
+    body.append(el('div', 'sheet-title', 'עריכת משימה'), title, actions, del);
+  });
 }
 
 function renderList() {
@@ -321,6 +375,15 @@ document.getElementById('search').oninput = e => {
 
 document.getElementById('tab-list').onclick = () => showScreen('list');
 document.getElementById('tab-catalog').onclick = () => showScreen('catalog');
+document.getElementById('tab-todos').onclick = () => showScreen('todos');
+document.getElementById('todo-form').onsubmit = e => {
+  e.preventDefault();
+  const input = document.getElementById('todo-title');
+  if (!store.addTodo(state, input.value)) return;
+  input.value = '';
+  saveAndRender();
+  input.focus();
+};
 document.getElementById('btn-add').onclick = () => {
   showScreen('catalog');
   document.getElementById('search').focus();

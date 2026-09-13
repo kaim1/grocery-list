@@ -6,7 +6,7 @@ export function createState(seed) {
   const items = seed.items.map(it => ({
     id: newId(), name: it.name, categoryId: categories[it.cat].id, lastQty: 1,
   }));
-  return { version: 1, categories, items, list: [] };
+  return { version: 1, categories, items, list: [], todos: [] };
 }
 
 export function isOnList(state, itemId) {
@@ -97,11 +97,33 @@ export function moveCategory(state, categoryId, direction) {
 
 export function serialize(state) { return JSON.stringify(state); }
 
+export function addTodo(state, title) {
+  if (!title.trim()) return null;
+  const todo = { id: newId(), title: title.trim(), done: false };
+  state.todos.push(todo);
+  return todo;
+}
+
+export function renameTodo(state, id, title) {
+  const todo = state.todos.find(t => t.id === id);
+  if (todo && title.trim()) todo.title = title.trim();
+}
+
+export function setTodoDone(state, id, done) {
+  const todo = state.todos.find(t => t.id === id);
+  if (todo) todo.done = Boolean(done);
+}
+
+export function deleteTodo(state, id) {
+  state.todos = state.todos.filter(t => t.id !== id);
+}
+
 export function load(raw, seed) {
   if (raw == null || raw === '') return { state: createState(seed), corrupt: false };
   let doc;
   try { doc = JSON.parse(raw); } catch { return { state: createState(seed), corrupt: true }; }
   if (!isValidDoc(doc)) return { state: createState(seed), corrupt: true };
+  doc.todos ??= [];
   doc.list = doc.list.filter(e => doc.items.some(i => i.id === e.itemId));
   return { state: doc, corrupt: false };
 }
@@ -109,6 +131,9 @@ export function load(raw, seed) {
 function isValidDoc(doc) {
   if (typeof doc !== 'object' || doc === null || doc.version !== 1) return false;
   if (![doc.categories, doc.items, doc.list].every(Array.isArray)) return false;
+  if (doc.todos !== undefined && (!Array.isArray(doc.todos) || !doc.todos.every(t =>
+    t && typeof t.id === 'string' && typeof t.title === 'string' &&
+    t.title.trim() && typeof t.done === 'boolean'))) return false;
   const catOk = doc.categories.every(c =>
     typeof c.id === 'string' && typeof c.name === 'string' && typeof c.order === 'number');
   const itemOk = doc.items.every(i =>

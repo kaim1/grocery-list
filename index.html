@@ -11,14 +11,28 @@
 </head>
 <body>
   <header>
-    <h1>מצרכים</h1>
+    <div class="heading-row"><h1>מצרכים</h1><button id="btn-account" class="account-button">סנכרון בין מכשירים</button></div>
     <nav>
       <button id="tab-list" class="tab active">הרשימה <span id="tab-list-count"></span></button>
       <button id="tab-catalog" class="tab">הקטלוג</button>
+      <button id="tab-todos" class="tab">משימות <span id="tab-todos-count"></span></button>
     </nav>
+    <p id="sync-status" role="status" aria-live="polite">טוען…</p>
   </header>
 
   <main>
+    <section id="screen-todos" hidden>
+      <form id="todo-form" class="todo-form">
+        <input id="todo-title" class="sheet-field" aria-label="משימה חדשה" placeholder="מה צריך לעשות?" maxlength="500" required autocomplete="off">
+        <button class="btn-primary" type="submit">הוספה</button>
+      </form>
+      <div id="todos-container"></div>
+      <p id="todos-empty" class="empty" hidden>אין משימות פתוחות</p>
+      <details id="todos-completed" hidden>
+        <summary id="todos-completed-label">הושלמו</summary>
+        <div id="todos-completed-container"></div>
+      </details>
+    </section>
     <section id="screen-list">
       <div id="list-container"></div>
       <p id="list-empty" class="empty" hidden>הרשימה ריקה — הוסיפו פריטים מהקטלוג</p>
@@ -41,6 +55,32 @@
 
   <dialog id="sheet">
     <div id="sheet-body"></div>
+  </dialog>
+
+  <dialog id="account-panel" aria-labelledby="account-title">
+    <div class="account-content">
+      <h2 id="account-title">שמירה וסנכרון</h2>
+      <p id="cloud-unconfigured" hidden>השמירה בענן עדיין לא הופעלה באפליקציה. בינתיים הנתונים נשמרים במכשיר הזה בלבד.</p>
+      <div id="account-login" hidden>
+        <p>התחברו עם אותו מייל בכל מכשיר כדי לגשת לרשימה ולמשימות שלכם. נשלח אליכם קישור התחברות.</p>
+        <form id="send-code-form" class="account-form">
+          <label for="login-email">כתובת מייל</label>
+          <input id="login-email" class="sheet-field" type="email" dir="ltr" autocomplete="email" required>
+          <button id="btn-send-code" class="btn-primary" type="submit">שליחת קישור למייל</button>
+        </form>
+      </div>
+      <div id="account-connected" hidden>
+        <p id="account-email" dir="ltr"></p>
+        <p>הרשימה והמשימות מסתנכרנות אוטומטית. שינויים ללא אינטרנט יישלחו כשיחזור החיבור.</p>
+        <div class="account-form">
+          <button id="btn-sync-now" class="btn-primary">סנכרון עכשיו</button>
+          <button id="btn-migrate-device" class="btn-quiet">ייבוא הנתונים המקומיים הישנים לחשבון</button>
+          <button id="btn-sign-out" class="btn-quiet">התנתקות</button>
+        </div>
+      </div>
+      <p id="account-message" role="status" aria-live="polite"></p>
+      <button id="btn-account-close" class="btn-quiet">סגירה</button>
+    </div>
   </dialog>
 
   <script type="module" src="app.js"></script>
