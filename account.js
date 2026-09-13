@@ -91,12 +91,42 @@ export function initializeAccount(onState) {
     catch (error) { message.textContent = error.message; }
     finally { button.disabled = false; }
   };
+  const loginButtons = [document.getElementById('btn-send-code'), document.getElementById('btn-verify-link')];
+  const linkInput = document.getElementById('login-link');
+  let loginBusy = false;
+  const runLoginAction = async (button, action) => {
+    if (loginBusy) return;
+    loginBusy = true;
+    loginButtons.forEach(item => { item.disabled = true; });
+    try { await runAction(button, action); }
+    finally {
+      loginBusy = false;
+      loginButtons.forEach(item => { item.disabled = false; });
+    }
+  };
+  panel.addEventListener('close', () => { linkInput.value = ''; });
   document.getElementById('send-code-form').onsubmit = event => {
     event.preventDefault();
-    runAction(document.getElementById('btn-send-code'), async () => {
+    runLoginAction(document.getElementById('btn-send-code'), async () => {
       const email = document.getElementById('login-email').value.trim();
-      await cloud.sendLink(email, `${location.origin}${location.pathname}`);
-      message.textContent = `קישור התחברות נשלח אל ${email}. פתחו אותו במכשיר הזה.`;
+      try { await cloud.sendLink(email, `${location.origin}${location.pathname}`); }
+      catch (error) {
+        if (error.status === 429) throw new Error('הגעתם למגבלת שליחת המיילים. המתינו לפני בקשת קישור נוסף.');
+        throw error;
+      }
+      message.textContent = `קישור התחברות נשלח אל ${email}. העתיקו אותו מהמייל בלי לפתוח אותו והדביקו בשדה הקישור כאן.`;
+      linkInput.focus();
+    });
+  };
+  document.getElementById('paste-link-form').onsubmit = event => {
+    event.preventDefault();
+    runLoginAction(document.getElementById('btn-verify-link'), async () => {
+      const value = linkInput.value;
+      linkInput.value = '';
+      await cloud.consumeEmailLink(value);
+      history.replaceState(null, '', `${location.pathname}${location.search}`);
+      boot();
+      panel.close();
     });
   };
   document.getElementById('btn-sign-out').onclick = event => runAction(event.target, async () => {

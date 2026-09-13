@@ -38,6 +38,7 @@ export class Cloud {
     if (!response.ok) {
       const error = new Error(result?.msg || result?.message || result?.error_description || 'הבקשה נכשלה. נסו שוב.');
       error.status = response.status;
+      error.code = result?.error_code || result?.code;
       throw error;
     }
     return result;
@@ -76,6 +77,37 @@ export class Cloud {
 
   async verify(email, token) {
     return this.saveSession(await this.request('/auth/v1/verify', { email, token, type: 'email' }));
+  }
+
+  async consumeEmailLink(value) {
+    const invalid = () => new Error('יש להדביק את קישור ההתחברות המקורי מהמייל של האפליקציה, בלי לפתוח אותו.');
+    let link;
+    try { link = new URL(value.trim()); } catch { throw invalid(); }
+    const endpoint = new URL(`${this.url}/auth/v1/verify`);
+    const token = link.searchParams.get('token');
+    const type = link.searchParams.get('type');
+    // Never navigate to a pasted URL or send its credentials to another host.
+    if (link.origin !== endpoint.origin || link.pathname !== endpoint.pathname ||
+        link.username || link.password || link.hash ||
+        link.searchParams.getAll('token').length !== 1 ||
+        link.searchParams.getAll('type').length !== 1 ||
+        !token || /\s/.test(token) || token.length > 2048 ||
+        !['magiclink', 'signup'].includes(type)) throw invalid();
+    let result;
+    try {
+      // GET /verify calls this field `token`; POST expects the same value as token_hash.
+      result = await this.request('/auth/v1/verify', { token_hash: token, type });
+    } catch (error) {
+      if (error.code === 'otp_expired') {
+        throw new Error('הקישור כבר נוצל או שפג תוקפו. בקשו קישור חדש והעתיקו אותו מהמייל בלי לפתוח אותו.');
+      }
+      if (error.status === 429) throw new Error('בוצעו יותר מדי ניסיונות התחברות. המתינו לפני ניסיון נוסף.');
+      throw new Error('לא הצלחנו לאמת את הקישור. בדקו את החיבור לאינטרנט ונסו שוב.');
+    }
+    try { return this.saveSession(result); }
+    catch {
+      throw new Error('לא הצלחנו לשמור את ההתחברות במכשיר. ודאו שהדפדפן מאפשר שמירת נתונים ושיש מקום פנוי.');
+    }
   }
 
   async token(owner) {

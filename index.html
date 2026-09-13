@@ -68,6 +68,12 @@
           <input id="login-email" class="sheet-field" type="email" dir="ltr" autocomplete="email" required>
           <button id="btn-send-code" class="btn-primary" type="submit">שליחת קישור למייל</button>
         </form>
+        <form id="paste-link-form" class="account-form">
+          <label for="login-link">הדבקת הקישור מהמייל</label>
+          <p id="login-link-help">העתיקו את קישור ההתחברות מהמייל בלי לפתוח אותו, חזרו לאפליקציה והדביקו כאן.</p>
+          <input id="login-link" class="sheet-field" type="url" dir="ltr" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="login-link-help" required>
+          <button id="btn-verify-link" class="btn-primary" type="submit">התחברות וסנכרון</button>
+        </form>
       </div>
       <div id="account-connected" hidden>
         <p id="account-email" dir="ltr"></p>

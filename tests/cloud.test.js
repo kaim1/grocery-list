@@ -117,3 +117,79 @@ test('first-time signup links are consumed like returning-user magic links', asy
   assert.equal(consumed, true);
   assert.equal(cloud.session.user.id, 'new-owner');
 });
+
+test('pasted email links verify directly, persist across reloads, and authorize sync', async () => {
+  for (const type of ['magiclink', 'signup']) {
+    const disk = storage();
+    const calls = [];
+    const fetcher = async (url, options) => {
+      calls.push(url);
+      if (url.endsWith('/verify')) {
+        assert.equal(options.method, 'POST');
+        assert.deepEqual(JSON.parse(options.body), { token_hash: 'email-token-hash', type });
+        return Response.json(session);
+      }
+      assert.equal(options.headers.Authorization, 'Bearer access');
+      return Response.json([]);
+    };
+    const cloud = new Cloud(config, disk, fetcher);
+    await cloud.consumeEmailLink(`  ${config.url}/auth/v1/verify?token=email-token-hash&type=${type}&redirect_to=https%3A%2F%2Fexample.org  `);
+    const reloaded = new Cloud(config, disk, fetcher);
+    assert.equal(reloaded.session.user.id, 'owner');
+    await reloaded.readDocument('owner');
+    assert.deepEqual(calls, [
+      `${config.url}/auth/v1/verify`,
+      `${config.url}/rest/v1/grocery_documents?select=document,revision&user_id=eq.owner`,
+    ]);
+  }
+});
+
+test('untrusted or malformed pasted links never make a request or alter saved data', async () => {
+  const disk = storage();
+  disk.setItem('groceries-v1', 'local-list-backup');
+  const cloud = new Cloud(config, disk, async () => { throw new Error('Unexpected network request'); });
+  cloud.saveSession(structuredClone(session));
+  const base = `${config.url}/auth/v1/verify`;
+  for (const value of [
+    '', 'not a URL', 'javascript:alert(1)',
+    'https://elsewhere.example/auth/v1/verify?token=secret&type=magiclink',
+    'https://example.supabase.co.evil.example/auth/v1/verify?token=secret&type=magiclink',
+    'http://example.supabase.co/auth/v1/verify?token=secret&type=magiclink',
+    'https://user:password@example.supabase.co/auth/v1/verify?token=secret&type=magiclink',
+    `${config.url}/wrong?token=secret&type=magiclink`,
+    `${base}?type=magiclink`, `${base}?token=secret`,
+    `${base}?token=secret&type=recovery`, `${base}?token=secret&type=invite`,
+    `${base}?token=secret&type=email_change`, `${base}?token=secret&type=magiclink#fragment`,
+    `${base}?token=secret&token=other&type=magiclink`,
+    `${base}?token=secret&type=magiclink&type=signup`,
+    `${base}?token=has%20spaces&type=magiclink`,
+    'https://kaim1.github.io/grocery-list/#access_token=secret&refresh_token=secret',
+  ]) await assert.rejects(cloud.consumeEmailLink(value), /קישור ההתחברות המקורי/);
+  assert.equal(cloud.session.access_token, 'access');
+  assert.equal(disk.getItem('groceries-v1'), 'local-list-backup');
+});
+
+test('expired pasted links and failed authentication do not replace the session or expose the link', async () => {
+  for (const [result, status, expected] of [
+    [{ error_code: 'otp_expired', msg: 'secret-token-hash' }, 403, /הקישור כבר נוצל/],
+    [{ message: 'secret-token-hash' }, 429, /יותר מדי ניסיונות/],
+    [{ message: 'secret-token-hash' }, 500, /לא הצלחנו לאמת/],
+  ]) {
+    const cloud = new Cloud(config, storage(), async () => Response.json(result, { status }));
+    cloud.saveSession(structuredClone(session));
+    await assert.rejects(cloud.consumeEmailLink(`${config.url}/auth/v1/verify?token=secret-token-hash&type=magiclink`), error => {
+      assert.match(error.message, expected);
+      assert.ok(!error.message.includes('secret-token-hash'));
+      return true;
+    });
+    assert.equal(cloud.session.user.id, 'owner');
+  }
+});
+
+test('pasted link reports failure if the verified session cannot be saved on the device', async () => {
+  const disk = storage();
+  disk.setItem = () => { throw new Error('Storage unavailable'); };
+  const cloud = new Cloud(config, disk, async () => Response.json(session));
+  await assert.rejects(cloud.consumeEmailLink(`${config.url}/auth/v1/verify?token=hash&type=magiclink`), /לא הצלחנו לשמור את ההתחברות במכשיר/);
+  assert.equal(cloud.session, null);
+});
