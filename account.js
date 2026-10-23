@@ -110,12 +110,12 @@ export function initializeAccount(onState) {
     event.preventDefault();
     runLoginAction(document.getElementById('btn-send-code'), async () => {
       const email = document.getElementById('login-email').value.trim();
-      try { await cloud.sendCode(email); }
+      try { await cloud.sendLink(email, `${location.origin}${location.pathname}`); }
       catch (error) {
         if (error.status === 429) throw new Error('הגעתם למגבלת שליחת המיילים. המתינו דקה לפני בקשת קוד נוסף.');
         throw error;
       }
-      message.textContent = `קוד כניסה נשלח אל ${email}. הקלידו אותו כאן.`;
+      message.textContent = `מייל התחברות נשלח אל ${email}. העתיקו ממנו את הקישור בלי לפתוח אותו והדביקו כאן.`;
       linkInput.focus();
     });
   };
