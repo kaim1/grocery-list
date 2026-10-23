@@ -1,6 +1,6 @@
 {
-  "name": "משימות",
-  "short_name": "משימות",
+  "name": "Tasks",
+  "short_name": "Tasks",
   "dir": "rtl",
   "lang": "he",
   "start_url": ".",
