@@ -54,7 +54,8 @@ select cron.schedule('send-reminders', '* * * * *', $$
   select net.http_post(
     url := 'https://herzjfdrakjfwihemjrp.supabase.co/functions/v1/send-reminders',
     headers := '{"Content-Type": "application/json"}'::jsonb,
-    body := '{}'::jsonb
+    body := '{}'::jsonb,
+    timeout_milliseconds := 30000  -- the default 5 s is shorter than a cold start
   );
 $$);
 
