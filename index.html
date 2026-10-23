@@ -29,13 +29,16 @@
     <symbol id="i-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 7h11M9 12h11M9 17h11M4.5 7h.01M4.5 12h.01M4.5 17h.01"/></symbol>
   </svg>
 
+  <div id="mini-head" class="mini-head" aria-hidden="true"></div>
   <main>
     <section id="screen-list" class="screen">
+      <header class="page-head"><h1 class="page-title">קניות</h1><p class="page-sub" id="list-sub"></p></header>
       <div id="list-container"></div>
       <p id="list-empty" class="empty" hidden>הרשימה ריקה. מוסיפים מוצרים מהשדה למטה.</p>
     </section>
 
     <section id="screen-todos" class="screen" hidden>
+      <header class="page-head"><h1 class="page-title">משימות</h1><p class="page-sub" id="todos-sub"></p></header>
       <div id="todos-container"></div>
       <p id="todos-empty" class="empty" hidden>אין משימות פתוחות</p>
       <details id="todos-completed" class="completed" hidden>
@@ -45,11 +48,12 @@
     </section>
 
     <section id="screen-projects" class="screen" hidden>
+      <header class="page-head" id="projects-head"><h1 class="page-title">פרויקטים</h1><p class="page-sub" id="projects-sub"></p></header>
       <div id="projects-container"></div>
     </section>
 
     <section id="screen-settings" class="screen" hidden>
-      <h1 class="page-title">הגדרות</h1>
+      <header class="page-head"><h1 class="page-title">הגדרות</h1></header>
       <div class="group-label">חשבון</div>
       <div class="group">
         <button id="btn-account" class="setting">

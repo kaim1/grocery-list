@@ -35,6 +35,7 @@ export function showScreen(name) {
   for (const pill of document.querySelectorAll('.pill')) pill.hidden = pill.dataset.screen !== name;
   hideToast();
   scrollTo(0, 0);
+  updateMiniHead();
 }
 
 function render() {
@@ -42,6 +43,7 @@ function render() {
   renderTodos();
   renderProjects();
   if (!document.getElementById('catalog').hidden) renderCatalog();
+  updateMiniHead();
 }
 
 // ---------- shared helpers ----------
@@ -190,6 +192,7 @@ function renderList() {
   const byId = new Map(state.items.map(i => [i.id, i]));
   const entries = state.list.map(e => ({ ...e, item: byId.get(e.itemId) }));
   document.getElementById('list-empty').hidden = entries.length > 0;
+  document.getElementById('list-sub').textContent = entries.length ? count(entries.length, 'מוצר אחד לקנות', 'מוצרים לקנות') : '';
 
   for (const cat of store.sortedCategories(state)) {
     const inCat = entries.filter(e => e.item.categoryId === cat.id);
@@ -274,7 +277,21 @@ function whenLabel(when) {
 // Just-checked tasks stay in place for a moment before moving to "הושלמו".
 const settling = new Set();
 
+const count = (n, one, many) => n === 1 ? one : `${n} ${many}`;
+
+// The compact title bar that fades in once the screen's large title scrolls under it.
+function updateMiniHead() {
+  const title = document.querySelector('.screen:not([hidden]) :is(.page-title, .project-title)');
+  const mini = document.getElementById('mini-head');
+  const head = title?.closest('[hidden]') ? null : title;
+  mini.textContent = head ? head.textContent : '';
+  mini.classList.toggle('show', !!head && head.getBoundingClientRect().bottom < mini.offsetHeight);
+}
+addEventListener('scroll', updateMiniHead, { passive: true });
+
 function renderTodos() {
+  document.getElementById('todos-sub').textContent =
+    new Date().toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
   const done = renderTaskGroups(
     document.getElementById('todos-container'),
     document.getElementById('todos-completed-container'),
@@ -756,18 +773,21 @@ function renderProjects() {
   container.replaceChildren();
   const pill = document.getElementById('btn-new-project');
   const project = state.projects.find(p => p.id === currentProject);
+  document.getElementById('projects-head').hidden = !!project;
   if (!project) {
     currentProject = null;
     pill.textContent = 'פרויקט חדש';
     pill.onclick = openNewProject;
     const active = store.sortedProjects(state).filter(p => !p.done);
     const finished = store.sortedProjects(state).filter(p => p.done);
+    document.getElementById('projects-sub').textContent =
+      active.length ? count(active.length, 'פרויקט פעיל אחד', 'פעילים') : '';
     if (!active.length && !finished.length) {
       container.append(el('p', 'empty', 'עדיין אין פרויקטים. פרויקט מקבץ משימות עם מטרה אחת, כמו שיפוץ או יום הולדת.'));
       return;
     }
     if (active.length) {
-      const wrap = section('פרויקטים');
+      const wrap = el('div', 'category');
       for (const p of active) wrap.append(projectRow(p));
       container.append(wrap);
     }
