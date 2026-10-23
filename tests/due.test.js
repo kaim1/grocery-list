@@ -5,14 +5,14 @@ import { dueReminders } from '../supabase/functions/send-reminders/due.js';
 const now = new Date('2026-10-23T09:00:30Z');
 const doc = todos => [{ user_id: 'u1', document: { projects: [{ id: 'p1', name: 'בית' }], todos } }];
 
-test('sends a reminder that is due, with its project in the body', () => {
+test('sends a reminder that is due, with only the task title', () => {
   const due = dueReminders(doc([
     { id: 't1', title: 'לקנות נורות', remindAt: '2026-10-23T09:00:00.000Z', projectId: 'p1' },
     { id: 't2', title: 'להתקשר', remindAt: '2026-10-23T08:59:00.000Z' },
   ]), now);
   assert.deepEqual(due.map(d => d.payload), [
-    { id: 't1', title: 'לקנות נורות', body: 'בית · תזכורת' },
-    { id: 't2', title: 'להתקשר', body: 'תזכורת' },
+    { id: 't1', title: 'לקנות נורות' },
+    { id: 't2', title: 'להתקשר' },
   ]);
   assert.equal(due[0].user_id, 'u1');
   assert.equal(due[0].remind_at, '2026-10-23T09:00:00.000Z');

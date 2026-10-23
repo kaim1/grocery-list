@@ -6,15 +6,13 @@ export const STALE_MS = 6 * 60 * 60 * 1000;
 export function dueReminders(rows, now) {
   const due = [];
   for (const { user_id, document } of rows) {
-    const projects = new Map((document?.projects || []).map(p => [p.id, p.name]));
     for (const todo of document?.todos || []) {
       if (todo.done || !todo.remindAt) continue;
       const at = Date.parse(todo.remindAt);
       if (Number.isNaN(at) || at > now.getTime() || now.getTime() - at > STALE_MS) continue;
-      const project = todo.projectId ? projects.get(todo.projectId) : null;
       due.push({
         user_id, todo_id: todo.id, remind_at: new Date(at).toISOString(),
-        payload: { id: todo.id, title: todo.title, body: project ? `${project} · תזכורת` : 'תזכורת' },
+        payload: { id: todo.id, title: todo.title },
       });
     }
   }
