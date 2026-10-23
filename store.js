@@ -97,11 +97,50 @@ export function moveCategory(state, categoryId, direction) {
 
 export function serialize(state) { return JSON.stringify(state); }
 
-export function addTodo(state, title) {
+// A task's `when` is 'anytime', 'someday' or a local date 'YYYY-MM-DD'.
+// Today and tomorrow are stored as real dates, so tomorrow's tasks move into today on their own.
+export const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function dateKey(date) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+export function addDays(key, days) {
+  const [y, m, d] = key.split('-').map(Number);
+  return dateKey(new Date(y, m - 1, d + days));
+}
+
+export function addTodo(state, title, fields = {}) {
   if (!title.trim()) return null;
-  const todo = { id: newId(), title: title.trim(), done: false };
+  const todo = { id: newId(), title: title.trim(), done: false, when: 'anytime', ...fields };
   state.todos.push(todo);
   return todo;
+}
+
+export function updateTodo(state, id, fields) {
+  const todo = state.todos.find(t => t.id === id);
+  if (!todo) return;
+  if ('title' in fields && !fields.title.trim()) delete fields.title;
+  Object.assign(todo, fields, 'title' in fields ? { title: fields.title.trim() } : {});
+}
+
+// Sections of the tasks screen. Overdue dated tasks join today.
+export function groupTodos(todos, today) {
+  const tomorrow = addDays(today, 1);
+  const groups = { today: [], tomorrow: [], upcoming: [], anytime: [], someday: [] };
+  for (const todo of todos) {
+    const when = todo.when || 'anytime';
+    if (when === 'someday') groups.someday.push(todo);
+    else if (!DATE.test(when)) groups.anytime.push(todo);
+    else if (when <= today) groups.today.push(todo);
+    else if (when === tomorrow) groups.tomorrow.push(todo);
+    else groups.upcoming.push(todo);
+  }
+  const byDate = (a, b) => a.when.localeCompare(b.when);
+  groups.today.sort(byDate);
+  groups.upcoming.sort(byDate);
+  return groups;
 }
 
 export function renameTodo(state, id, title) {
@@ -111,7 +150,9 @@ export function renameTodo(state, id, title) {
 
 export function setTodoDone(state, id, done) {
   const todo = state.todos.find(t => t.id === id);
-  if (todo) todo.done = Boolean(done);
+  if (!todo) return;
+  todo.done = Boolean(done);
+  todo.doneAt = todo.done ? new Date().toISOString() : null;
 }
 
 export function deleteTodo(state, id) {
@@ -135,6 +176,7 @@ export function load(raw, seed) {
   try { doc = JSON.parse(raw); } catch { return { state: createState(seed), corrupt: true }; }
   if (!isValidDoc(doc)) return { state: createState(seed), corrupt: true };
   doc.todos ??= [];
+  for (const todo of doc.todos) todo.when ??= 'anytime';
   doc.list = doc.list.filter(e => doc.items.some(i => i.id === e.itemId));
   return { state: doc, corrupt: false };
 }
@@ -144,7 +186,9 @@ function isValidDoc(doc) {
   if (![doc.categories, doc.items, doc.list].every(Array.isArray)) return false;
   if (doc.todos !== undefined && (!Array.isArray(doc.todos) || !doc.todos.every(t =>
     t && typeof t.id === 'string' && typeof t.title === 'string' &&
-    t.title.trim() && typeof t.done === 'boolean'))) return false;
+    t.title.trim() && typeof t.done === 'boolean' &&
+    (t.when === undefined || t.when === 'anytime' || t.when === 'someday' || DATE.test(t.when)) &&
+    [t.remindAt, t.projectId, t.doneAt].every(v => v == null || typeof v === 'string')))) return false;
   const catOk = doc.categories.every(c =>
     typeof c.id === 'string' && typeof c.name === 'string' && typeof c.order === 'number');
   const itemOk = doc.items.every(i =>

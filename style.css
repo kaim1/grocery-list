@@ -116,6 +116,42 @@ main {
 .pill-form input:focus { outline: none; }
 body.keyboard .tabbar { visibility: hidden; }
 
+/* task composer: rises above the keyboard */
+.composer-layer { position: fixed; inset: 0; z-index: 15; }
+.composer-dim { position: absolute; inset: 0; background: rgba(23, 33, 27, .28); }
+.composer {
+  position: absolute; inset-inline: max(.6rem, env(safe-area-inset-left));
+  bottom: calc(.6rem + max(var(--keyboard), env(safe-area-inset-bottom)));
+  max-width: 640px; margin: 0 auto;
+  display: grid; gap: .8rem; background: var(--surface); border-radius: 18px;
+  padding: 1rem 1rem .8rem; box-shadow: 0 8px 28px rgba(23, 33, 27, .14);
+}
+#todo-title { border: 0; background: transparent; font: inherit; font-size: 1.05rem; color: var(--ink); padding: 0; }
+#todo-title:focus { outline: none; }
+#todo-title::placeholder { color: var(--faint); }
+.composer .chips { gap: .35rem; flex-wrap: nowrap; }
+.composer .chip { padding: .38rem .7rem; font-size: .85rem; white-space: nowrap; }
+.composer-foot { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 2.2rem; }
+.addbtn {
+  flex: none; width: 2.2rem; height: 2.2rem; border: 0; border-radius: 50%;
+  background: var(--accent); color: #fff; display: grid; place-items: center;
+}
+.addbtn svg { width: 1.05rem; height: 1.05rem; }
+.date-chip { position: relative; overflow: hidden; }
+.date-chip input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; border: 0; padding: 0; }
+
+/* tasks: meta and collapsible sections */
+.row .meta.late { color: var(--muted); }
+details.category > summary { list-style: none; cursor: pointer; }
+details.category > summary::-webkit-details-marker { display: none; }
+details.category > summary h2 { margin: 1.4rem 0 .25rem; }
+
+/* settings-style rows inside sheets */
+.rows { background: var(--field); border-radius: 12px; overflow: hidden; }
+.rows .setting { font-size: .92rem; padding: .75rem .85rem; }
+.rows .setting .value.accent { color: var(--accent); font-weight: 600; }
+.when-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+
 /* bottom tabs */
 .tabbar {
   position: fixed; z-index: 4; inset-inline: 0; bottom: 0;

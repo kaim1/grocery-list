@@ -21,7 +21,8 @@ test('tasks can be added, edited, completed, reopened and deleted independently 
   store.setTodoDone(state, todo.id, true);
   const restored = store.load(store.serialize(state), seed);
   assert.equal(restored.corrupt, false);
-  assert.deepEqual(restored.state.todos, [{ id: todo.id, title: 'להתקשר למרפאה', done: true }]);
+  assert.deepEqual(restored.state.todos.map(({ doneAt, ...rest }) => rest),
+    [{ id: todo.id, title: 'להתקשר למרפאה', done: true, when: 'anytime' }]);
   store.setTodoDone(state, todo.id, false);
   assert.equal(state.todos[0].done, false);
   store.deleteTodo(state, todo.id);
@@ -60,4 +61,43 @@ test('undo puts a deleted task and a removed grocery back in place', () => {
   store.deleteItem(state, milk.id);
   store.restoreListEntry(state, entry, 0);
   assert.deepEqual(state.list.map(e => e.itemId), [bread.id]);
+});
+
+test('tasks without a time are "anytime", and old tasks gain it on load', () => {
+  const legacy = { version: 1, categories: [{ id: 'c', name: 'כללי', order: 0 }], items: [], list: [],
+    todos: [{ id: 't', title: 'ישנה', done: false }] };
+  assert.equal(store.load(JSON.stringify(legacy), seed).state.todos[0].when, 'anytime');
+  const state = store.createState(seed);
+  assert.equal(store.addTodo(state, 'א').when, 'anytime');
+  assert.equal(store.addTodo(state, 'ב', { when: '2026-10-24' }).when, '2026-10-24');
+  for (const when of ['today', '24/10/2026', 5]) {
+    assert.equal(store.load(JSON.stringify({ ...state, todos: [{ id: 'x', title: 'x', done: false, when }] }), seed).corrupt, true);
+  }
+});
+
+test('tasks group into today (with overdue), tomorrow, upcoming, anytime and someday', () => {
+  const t = (id, when) => ({ id, title: id, done: false, when });
+  const groups = store.groupTodos([
+    t('late', '2026-10-21'), t('now', '2026-10-23'), t('tom', '2026-10-24'), t('far', '2026-11-02'),
+    t('soon', '2026-10-26'), t('any', 'anytime'), t('some', 'someday'), { id: 'old', title: 'old', done: false },
+  ], '2026-10-23');
+  assert.deepEqual(Object.fromEntries(Object.entries(groups).map(([k, v]) => [k, v.map(x => x.id)])), {
+    today: ['late', 'now'], tomorrow: ['tom'], upcoming: ['soon', 'far'], anytime: ['any', 'old'], someday: ['some'],
+  });
+  assert.equal(store.addDays('2026-12-31', 1), '2027-01-01');
+  assert.equal(store.addDays('2026-03-01', -1), '2026-02-28');
+});
+
+test('updating a task keeps its title when the new one is blank', () => {
+  const state = store.createState(seed);
+  const todo = store.addTodo(state, 'משימה');
+  store.updateTodo(state, todo.id, { title: '  ', when: 'someday' });
+  assert.equal(todo.title, 'משימה');
+  assert.equal(todo.when, 'someday');
+  store.updateTodo(state, todo.id, { title: ' חדשה ' });
+  assert.equal(todo.title, 'חדשה');
+  store.setTodoDone(state, todo.id, true);
+  assert.equal(typeof todo.doneAt, 'string');
+  store.setTodoDone(state, todo.id, false);
+  assert.equal(todo.doneAt, null);
 });

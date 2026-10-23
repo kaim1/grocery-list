@@ -242,27 +242,90 @@ function openQtySheet(item) {
 
 // ---------- tasks ----------
 
-function renderTodos() {
-  const active = document.getElementById('todos-container');
-  const completed = document.getElementById('todos-completed-container');
-  active.replaceChildren();
-  completed.replaceChildren();
-  for (const todo of state.todos) (todo.done ? completed : active).append(todoRow(todo));
-  const count = state.todos.filter(t => !t.done).length;
-  document.getElementById('todos-empty').hidden = count > 0;
-  document.getElementById('todos-completed').hidden = completed.childElementCount === 0;
-  document.getElementById('todos-completed-count').textContent = completed.childElementCount;
+const today = () => store.dateKey(new Date());
+const WEEKDAYS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
+
+function dayLabel(key) {
+  const t = today();
+  if (key === t) return 'היום';
+  if (key === store.addDays(t, 1)) return 'מחר';
+  if (key === store.addDays(t, -1)) return 'אתמול';
+  const [y, m, d] = key.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  const sameYear = y === new Date().getFullYear();
+  return `${WEEKDAYS[date.getDay()]} ${d}.${m}${sameYear ? '' : `.${String(y).slice(2)}`}`;
 }
 
-function todoRow(todo) {
+function whenLabel(when) {
+  if (when === 'someday') return 'מתישהו';
+  if (!store.DATE.test(when || '')) return 'בכל זמן';
+  return when < today() ? `${dayLabel(when)} (עבר)` : dayLabel(when);
+}
+
+// Just-checked tasks stay in place for a moment before moving to "הושלמו".
+const settling = new Set();
+
+function renderTodos() {
+  const container = document.getElementById('todos-container');
+  const completed = document.getElementById('todos-completed-container');
+  container.replaceChildren();
+  completed.replaceChildren();
+  const open = state.todos.filter(t => !t.done || settling.has(t.id));
+  const done = state.todos.filter(t => t.done && !settling.has(t.id))
+    .sort((a, b) => (b.doneAt || '').localeCompare(a.doneAt || ''));
+  const groups = store.groupTodos(open, today());
+  for (const [key, title] of [['today', 'היום'], ['tomorrow', 'מחר'], ['upcoming', 'בהמשך'], ['anytime', 'בכל זמן']]) {
+    if (!groups[key].length) continue;
+    const wrap = section(title);
+    for (const todo of groups[key]) wrap.append(todoRow(todo, key));
+    container.append(wrap);
+  }
+  if (groups.someday.length) {
+    const details = el('details', 'category');
+    details.open = somedayOpen;
+    details.ontoggle = () => { somedayOpen = details.open; };
+    const summary = el('summary');
+    const h = el('h2');
+    h.append(el('span', '', 'מתישהו'), el('span', '', String(groups.someday.length)));
+    summary.append(h);
+    details.append(summary);
+    for (const todo of groups.someday) details.append(todoRow(todo, 'someday'));
+    container.append(details);
+  }
+  for (const todo of done) completed.append(todoRow(todo, 'done'));
+  document.getElementById('todos-empty').hidden = open.length > 0;
+  document.getElementById('todos-completed').hidden = done.length === 0;
+  document.getElementById('todos-completed-count').textContent = done.length;
+}
+let somedayOpen = false;
+
+function todoMeta(todo, group) {
+  const meta = el('span', 'meta');
+  if (group === 'today' && todo.when < today()) {
+    meta.classList.add('late');
+    meta.textContent = dayLabel(todo.when);
+  } else if (group === 'upcoming') {
+    meta.textContent = dayLabel(todo.when);
+  }
+  return meta.textContent ? meta : null;
+}
+
+function todoRow(todo, group) {
   const row = el('div', `row todo-row${todo.done ? ' done' : ''}`);
   const check = checkbox(`${todo.done ? 'פתיחה מחדש' : 'סיום'}: ${todo.title}`, todo.done, done => {
-    store.setTodoDone(state, todo.id, done); saveAndRender();
+    store.setTodoDone(state, todo.id, done);
+    if (done) {
+      settling.add(todo.id);
+      setTimeout(() => { settling.delete(todo.id); renderTodos(); }, 1200);
+    }
+    saveAndRender();
   });
   const title = el('button', 'name', todo.title);
   title.setAttribute('aria-label', `עריכת משימה: ${todo.title}`);
   title.onclick = () => openTodoEditor(todo);
   row.append(check, title);
+  const meta = group === 'done' ? null : todoMeta(todo, group);
+  if (meta) row.append(meta);
   return swipeable(row, 'מחיקה', () => deleteTodo(todo));
 }
 
@@ -275,25 +338,116 @@ function deleteTodo(todo) {
   showToast('המשימה נמחקה', () => store.restoreTodo(state, copy, index));
 }
 
+// "When" choices shared by the composer and the editor.
+function resolveWhen(choice) {
+  if (choice === 'today') return today();
+  if (choice === 'tomorrow') return store.addDays(today(), 1);
+  return choice;
+}
+
+function whenChoice(when) {
+  if (when === today()) return 'today';
+  if (when === store.addDays(today(), 1)) return 'tomorrow';
+  return store.DATE.test(when || '') ? 'date' : when;
+}
+
 function openTodoEditor(todo) {
-  openSheet(body => {
+  const draft = { title: todo.title, when: todo.when || 'anytime' };
+  const main = () => openSheet(body => {
     const title = el('input', 'sheet-field');
-    title.value = todo.title;
+    title.value = draft.title;
     title.maxLength = 500;
     title.setAttribute('aria-label', 'תוכן המשימה');
+    title.oninput = () => { draft.title = title.value; };
+    const rows = el('div', 'rows');
+    const whenRow = el('button', 'setting');
+    whenRow.append(icon('cal'), el('span', '', 'מתי'), el('span', 'value', whenLabel(draft.when)), el('span', 'chev', '‹'));
+    whenRow.onclick = () => pickWhen(draft.when, when => { draft.when = when; main(); });
+    rows.append(whenRow);
     const del = el('button', 'btn-danger-text', 'מחיקת המשימה');
     del.onclick = () => { closeSheet(); deleteTodo(todo); };
     const saveBtn = el('button', 'btn-pill', 'שמירה');
     saveBtn.onclick = () => {
-      if (!title.value.trim()) return;
-      store.renameTodo(state, todo.id, title.value);
+      store.updateTodo(state, todo.id, { title: draft.title, when: draft.when });
       closeSheet(); saveAndRender();
     };
     const footer = el('div', 'sheet-footer');
     footer.append(del, saveBtn);
-    body.append(title, footer);
+    body.append(title, rows, footer);
+  });
+  main();
+}
+
+function pickWhen(current, onPick) {
+  openSheet(body => {
+    const chips = el('div', 'when-chips');
+    const selected = whenChoice(current);
+    for (const [choice, label] of [['today', 'היום'], ['tomorrow', 'מחר'], ['anytime', 'בכל זמן'], ['someday', 'מתישהו']]) {
+      const b = el('button', `chip${selected === choice ? ' on' : ''}`, label);
+      b.onclick = () => onPick(resolveWhen(choice));
+      chips.append(b);
+    }
+    const date = el('label', `chip date-chip${selected === 'date' ? ' on' : ''}`);
+    const input = el('input');
+    input.type = 'date';
+    input.setAttribute('aria-label', 'תאריך');
+    if (selected === 'date') input.value = current;
+    input.onchange = () => { if (input.value) onPick(input.value); };
+    date.append(icon('cal'), el('span', '', selected === 'date' ? dayLabel(current) : 'תאריך'), input);
+    chips.append(date);
+    body.append(el('div', 'sheet-title', 'מתי?'), chips);
   });
 }
+
+// ---------- task composer ----------
+
+const composer = {
+  when: 'anytime',
+  open() {
+    this.when = 'anytime';
+    this.render();
+    document.getElementById('composer').hidden = false;
+    document.getElementById('todo-title').focus();
+  },
+  close() {
+    document.getElementById('composer').hidden = true;
+    document.getElementById('todo-title').blur();
+  },
+  render() {
+    const choice = whenChoice(this.when);
+    for (const chip of document.querySelectorAll('#composer-when .chip')) {
+      chip.classList.toggle('soft-on', chip.dataset.when === choice);
+    }
+    document.getElementById('composer-date-label').textContent = choice === 'date' ? dayLabel(this.when) : 'תאריך';
+  },
+  submit() {
+    const input = document.getElementById('todo-title');
+    if (!store.addTodo(state, input.value, { when: this.when })) return;
+    input.value = '';
+    this.when = 'anytime';
+    this.render();
+    saveAndRender();
+  },
+};
+
+for (const chip of document.querySelectorAll('#composer-when button.chip')) {
+  // Keep the keyboard open while choosing.
+  chip.addEventListener('pointerdown', e => e.preventDefault());
+  chip.onclick = () => {
+    const when = resolveWhen(chip.dataset.when);
+    composer.when = composer.when === when ? 'anytime' : when;
+    composer.render();
+  };
+}
+document.getElementById('composer-date').onchange = e => {
+  if (e.target.value) composer.when = e.target.value;
+  composer.render();
+  document.getElementById('todo-title').focus();
+};
+document.querySelector('#composer-form .addbtn').addEventListener('pointerdown', e => e.preventDefault());
+document.getElementById('composer-form').onsubmit = e => { e.preventDefault(); composer.submit(); };
+document.getElementById('composer-dim').onclick = () => composer.close();
+document.getElementById('btn-new-todo').onclick = () => composer.open();
 
 // ---------- catalog: the add/search screen ----------
 
@@ -406,7 +560,11 @@ function openSheet(build) {
   body.textContent = '';
   build(body);
   const sheet = document.getElementById('sheet');
-  if (!sheet.open) sheet.showModal();
+  if (!sheet.open) {
+    sheet.showModal();
+    // Don't pop the keyboard just because a sheet opened.
+    if (document.activeElement?.matches('input')) document.activeElement.blur();
+  }
 }
 
 function closeSheet() { document.getElementById('sheet').close(); }
@@ -577,14 +735,6 @@ document.getElementById('tab-list').onclick = () => showScreen('list');
 document.getElementById('tab-todos').onclick = () => showScreen('todos');
 document.getElementById('tab-settings').onclick = () => showScreen('settings');
 
-document.getElementById('todo-form').onsubmit = e => {
-  e.preventDefault();
-  const input = document.getElementById('todo-title');
-  if (!store.addTodo(state, input.value)) return;
-  input.value = '';
-  saveAndRender();
-  input.focus();
-};
 
 document.getElementById('btn-export').onclick = () => {
   const blob = new Blob([store.serialize(state)], { type: 'application/json' });
@@ -610,6 +760,9 @@ document.getElementById('import-file').onchange = async e => {
   state = imported;
   save(); render();
 };
+
+// Dates move on overnight: refresh the sections when the app comes back.
+document.addEventListener('visibilitychange', () => { if (!document.hidden && state) render(); });
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
 
