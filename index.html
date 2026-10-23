@@ -129,16 +129,16 @@
       <h2 id="account-title">שמירה וסנכרון</h2>
       <p id="cloud-unconfigured" hidden>השמירה בענן עדיין לא הופעלה באפליקציה. בינתיים הנתונים נשמרים במכשיר הזה בלבד.</p>
       <div id="account-login" hidden>
-        <p>התחברו עם אותו מייל בכל מכשיר כדי לגשת לרשימה ולמשימות שלכם. נשלח אליכם קישור התחברות.</p>
+        <p>התחברו עם אותו מייל בכל מכשיר כדי לגשת לרשימה ולמשימות שלכם. נשלח אליכם קוד כניסה במייל.</p>
         <form id="send-code-form" class="account-form">
           <label for="login-email">כתובת מייל</label>
           <input id="login-email" class="sheet-field" type="email" dir="ltr" autocomplete="email" required>
-          <button id="btn-send-code" class="btn-primary" type="submit">שליחת קישור למייל</button>
+          <button id="btn-send-code" class="btn-primary" type="submit">שליחת קוד למייל</button>
         </form>
         <form id="paste-link-form" class="account-form">
-          <label for="login-link">הדבקת הקישור מהמייל</label>
-          <p id="login-link-help">העתיקו את קישור ההתחברות מהמייל בלי לפתוח אותו, חזרו לאפליקציה והדביקו כאן.</p>
-          <input id="login-link" class="sheet-field" type="url" dir="ltr" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="login-link-help" required>
+          <label for="login-link">הקוד מהמייל</label>
+          <p id="login-link-help">מקלידים כאן את הקוד שהגיע במייל.</p>
+          <input id="login-link" class="sheet-field" type="text" dir="ltr" inputmode="numeric" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" aria-describedby="login-link-help" required>
           <button id="btn-verify-link" class="btn-primary" type="submit">התחברות וסנכרון</button>
         </form>
       </div>

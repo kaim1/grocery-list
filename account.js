@@ -110,21 +110,32 @@ export function initializeAccount(onState) {
     event.preventDefault();
     runLoginAction(document.getElementById('btn-send-code'), async () => {
       const email = document.getElementById('login-email').value.trim();
-      try { await cloud.sendLink(email, `${location.origin}${location.pathname}`); }
+      try { await cloud.sendCode(email); }
       catch (error) {
-        if (error.status === 429) throw new Error('הגעתם למגבלת שליחת המיילים. המתינו לפני בקשת קישור נוסף.');
+        if (error.status === 429) throw new Error('הגעתם למגבלת שליחת המיילים. המתינו דקה לפני בקשת קוד נוסף.');
         throw error;
       }
-      message.textContent = `קישור התחברות נשלח אל ${email}. העתיקו אותו מהמייל בלי לפתוח אותו והדביקו בשדה הקישור כאן.`;
+      message.textContent = `קוד כניסה נשלח אל ${email}. הקלידו אותו כאן.`;
       linkInput.focus();
     });
   };
   document.getElementById('paste-link-form').onsubmit = event => {
     event.preventDefault();
     runLoginAction(document.getElementById('btn-verify-link'), async () => {
-      const value = linkInput.value;
+      const value = linkInput.value.trim();
       linkInput.value = '';
-      await cloud.consumeEmailLink(value);
+      // A code from the email; an older sign-in email may still hold a link, which is pasted instead.
+      if (/^https?:/i.test(value)) await cloud.consumeEmailLink(value);
+      else {
+        const email = document.getElementById('login-email').value.trim();
+        if (!email) throw new Error('יש למלא את כתובת המייל שאליה נשלח הקוד.');
+        try { await cloud.verify(email, value.replace(/\s/g, '')); }
+        catch (error) {
+          if (error.status === 429) throw new Error('בוצעו יותר מדי ניסיונות התחברות. המתינו לפני ניסיון נוסף.');
+          if (error.status === 400 || error.status === 403) throw new Error('הקוד שגוי או שפג תוקפו. בדקו אותו או בקשו קוד חדש.');
+          throw error;
+        }
+      }
       history.replaceState(null, '', `${location.pathname}${location.search}`);
       boot();
       panel.close();
