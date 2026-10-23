@@ -1,0 +1,3 @@
+# Secrets for the send-reminders function. Never commit.
+supabase/functions/.env
+.redesign-tmp/

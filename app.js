@@ -2,6 +2,7 @@
 import * as store from './store.js';
 import { SEED } from './seed.js';
 import { initializeAccount } from './account.js';
+import * as reminders from './reminders.js';
 
 let state;
 let account;
@@ -14,6 +15,13 @@ function save() {
 
 function boot() {
   account = initializeAccount(loaded => { state = loaded; render(); });
+  renderSettings();
+  reminders.syncSubscription(account).catch(() => {}).finally(renderSettings);
+  const fromNotification = new URLSearchParams(location.search).get('todo');
+  if (fromNotification) {
+    history.replaceState(null, '', location.pathname);
+    openTodoById(fromNotification);
+  }
 }
 
 export function showScreen(name) {
@@ -307,7 +315,10 @@ function renderTaskGroups(container, completedContainer, todos, options) {
 }
 let somedayOpen = false;
 
-function todoMeta(todo, group) {
+const upcomingReminder = todo => !todo.done && todo.remindAt && new Date(todo.remindAt) > new Date();
+
+// Grey details on the left of a row. With a project shown, a reminder is just a bell so the row fits.
+function todoMeta(todo, group, withProject) {
   const meta = el('span', 'meta');
   if (group === 'today' && todo.when < today()) {
     meta.classList.add('late');
@@ -315,7 +326,17 @@ function todoMeta(todo, group) {
   } else if (group === 'upcoming') {
     meta.textContent = dayLabel(todo.when);
   }
-  return meta.textContent ? meta : null;
+  if (upcomingReminder(todo)) {
+    const remind = new Date(todo.remindAt);
+    if (!withProject && !meta.textContent) {
+      const day = store.dateKey(remind);
+      const sameDay = day === todo.when || (day === today() && group === 'today');
+      meta.textContent = sameDay ? reminders.hhmm(remind) : `${dayLabel(day)} ${reminders.hhmm(remind)}`;
+    }
+    meta.append(icon('bell'));
+    meta.setAttribute('aria-label', `תזכורת ${dayLabel(store.dateKey(remind))} ב-${reminders.hhmm(remind)}`);
+  }
+  return meta.childNodes.length ? meta : null;
 }
 
 function projectName(id) {
@@ -338,7 +359,7 @@ function todoRow(todo, group, options = {}) {
   row.append(check, title);
   const project = options.showProject && projectName(todo.projectId);
   if (project) row.append(el('span', 'proj', project));
-  const meta = group === 'done' ? null : todoMeta(todo, group);
+  const meta = group === 'done' ? null : todoMeta(todo, group, Boolean(project));
   if (meta) row.append(meta);
   return swipeable(row, 'מחיקה', () => deleteTodo(todo));
 }
@@ -366,7 +387,8 @@ function whenChoice(when) {
 }
 
 function openTodoEditor(todo) {
-  const draft = { title: todo.title, when: todo.when || 'anytime', projectId: todo.projectId || null };
+  const draft = { title: todo.title, when: todo.when || 'anytime', projectId: todo.projectId || null,
+    remindAt: todo.remindAt || null };
   const main = () => openSheet(body => {
     const title = el('input', 'sheet-field');
     title.value = draft.title;
@@ -381,12 +403,21 @@ function openTodoEditor(todo) {
     projectRow.append(icon('folder'), el('span', '', 'פרויקט'),
       el('span', 'value', projectName(draft.projectId) || 'ללא'), el('span', 'chev', '‹'));
     projectRow.onclick = () => pickProject(draft.projectId, id => { draft.projectId = id; main(); });
-    rows.append(whenRow, projectRow);
+    const timeRow = el('button', 'setting');
+    const time = reminderLabel(draft.remindAt);
+    timeRow.append(icon('clock'), el('span', '', 'שעה'),
+      el('span', `value${time ? ' accent' : ''}`, time ? `${time} · תזכורת` : 'ללא'), el('span', 'chev', '‹'));
+    timeRow.onclick = () => pickReminder(draft.remindAt, remindAt => {
+      draft.remindAt = remindAt;
+      if (remindAt) draft.when = store.dateKey(new Date(remindAt));
+      afterReminderChosen(remindAt, main);
+    });
+    rows.append(whenRow, projectRow, timeRow);
     const del = el('button', 'btn-danger-text', 'מחיקת המשימה');
     del.onclick = () => { closeSheet(); deleteTodo(todo); };
     const saveBtn = el('button', 'btn-pill', 'שמירה');
     saveBtn.onclick = () => {
-      store.updateTodo(state, todo.id, { title: draft.title, when: draft.when, projectId: draft.projectId });
+      store.updateTodo(state, todo.id, { title: draft.title, when: draft.when, projectId: draft.projectId, remindAt: draft.remindAt });
       closeSheet(); saveAndRender();
     };
     const footer = el('div', 'sheet-footer');
@@ -423,8 +454,10 @@ const composer = {
   when: 'anytime',
   projectId: null,
   defaultProject: null,
+  remindAt: null,
   open(projectId = null) {
     this.when = 'anytime';
+    this.remindAt = null;
     this.defaultProject = this.projectId = projectId;
     this.render();
     document.getElementById('composer').hidden = false;
@@ -440,15 +473,21 @@ const composer = {
       chip.classList.toggle('soft-on', chip.dataset.when === choice);
     }
     document.getElementById('composer-date-label').textContent = choice === 'date' ? dayLabel(this.when) : 'תאריך';
+    const time = this.remindAt && reminders.hhmm(new Date(this.remindAt));
+    document.getElementById('composer-time-label').textContent = time || 'שעה';
+    document.getElementById('composer-time').classList.toggle('soft-on', Boolean(time));
     const project = projectName(this.projectId);
     document.getElementById('composer-project-label').textContent = project || 'פרויקט';
     document.getElementById('composer-project').classList.toggle('soft-on', Boolean(project));
   },
   submit() {
     const input = document.getElementById('todo-title');
-    if (!store.addTodo(state, input.value, { when: this.when, projectId: this.projectId })) return;
+    const fields = { when: this.when, projectId: this.projectId };
+    if (this.remindAt) fields.remindAt = this.remindAt;
+    if (!store.addTodo(state, input.value, fields)) return;
     input.value = '';
     this.when = 'anytime';
+    this.remindAt = null;
     this.projectId = this.defaultProject;
     this.render();
     saveAndRender();
@@ -473,6 +512,17 @@ document.querySelector('#composer-form .addbtn').addEventListener('pointerdown',
 document.getElementById('composer-form').onsubmit = e => { e.preventDefault(); composer.submit(); };
 document.getElementById('composer-dim').onclick = () => composer.close();
 document.getElementById('btn-new-todo').onclick = () => composer.open();
+document.getElementById('composer-time').onclick = () => {
+  pickReminder(composer.remindAt, remindAt => {
+    composer.remindAt = remindAt;
+    if (remindAt) composer.when = store.dateKey(new Date(remindAt));
+    afterReminderChosen(remindAt, () => {
+      closeSheet();
+      composer.render();
+      document.getElementById('todo-title').focus();
+    });
+  });
+};
 document.getElementById('composer-project').onclick = () => {
   pickProject(composer.projectId, id => {
     composer.projectId = id;
@@ -481,6 +531,220 @@ document.getElementById('composer-project').onclick = () => {
     document.getElementById('todo-title').focus();
   });
 };
+
+// ---------- reminders ----------
+
+const FULL_DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+
+function reminderLabel(remindAt) {
+  if (!remindAt) return null;
+  const date = new Date(remindAt);
+  const key = store.dateKey(date);
+  const day = key === today() ? 'היום' : key === store.addDays(today(), 1) ? 'מחר' : dayLabel(key);
+  return `${day}, ${reminders.hhmm(date)}`;
+}
+
+function presetDay(date) {
+  const key = store.dateKey(date);
+  if (key === today()) return null;
+  if (key === store.addDays(today(), 1) || store.addDays(today(), 6) >= key) return FULL_DAYS[date.getDay()];
+  return dayLabel(key);
+}
+
+function pickReminder(current, onPick) {
+  openSheet(body => {
+    const title = el('div', 'sheet-title');
+    title.append(el('span', '', 'מתי להזכיר?'));
+    const grid = el('div', 'presets');
+    for (const preset of reminders.presets(new Date(), reminders.readTimes())) {
+      const b = el('button', 'preset');
+      const day = presetDay(preset.date);
+      const iso = preset.date.toISOString();
+      b.classList.toggle('on', current === iso);
+      b.append(icon(preset.icon), el('b', '', preset.label),
+        el('span', '', day ? `${day}, ${reminders.hhmm(preset.date)}` : reminders.hhmm(preset.date)));
+      b.onclick = () => onPick(iso);
+      grid.append(b);
+    }
+    const rows = el('div', 'rows');
+    const custom = el('button', 'setting');
+    custom.append(icon('cal'), el('span', '', 'תאריך ושעה אחרים'), el('span', 'chev', '‹'));
+    custom.onclick = () => pickExactTime(current, onPick, () => pickReminder(current, onPick));
+    rows.append(custom);
+    body.append(title, grid, rows);
+    if (current) {
+      const remove = el('button', 'btn-danger-text', 'הסרת התזכורת');
+      remove.onclick = () => onPick(null);
+      body.append(remove);
+    }
+  });
+}
+
+function wheelColumn(values, selected, onChange) {
+  const col = el('div', 'wheel-col');
+  const cells = values.map(v => el('div', '', String(v).padStart(2, '0')));
+  col.append(...cells);
+  let index = Math.max(0, values.indexOf(selected));
+  const mark = () => cells.forEach((c, i) => c.classList.toggle('c', i === index));
+  mark();
+  let timer;
+  col.onscroll = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const next = Math.min(values.length - 1, Math.max(0, Math.round(col.scrollTop / cells[0].offsetHeight)));
+      if (next !== index) { index = next; mark(); onChange(values[index]); }
+    }, 60);
+  };
+  for (const [i, cell] of cells.entries()) {
+    cell.onclick = () => col.scrollTo({ top: i * cell.offsetHeight, behavior: 'smooth' });
+  }
+  requestAnimationFrame(() => { col.scrollTop = index * cells[0].offsetHeight; });
+  return col;
+}
+
+function pickExactTime(current, onPick, back) {
+  const start = current ? new Date(current) : (() => {
+    const d = new Date(Date.now() + 60 * 60000);
+    d.setMinutes(0, 0, 0);
+    return d;
+  })();
+  let day = store.dateKey(start);
+  let hour = start.getHours();
+  let minute = Math.round(start.getMinutes() / 5) * 5 % 60;
+  openSheet(body => {
+    const title = el('div', 'sheet-title');
+    const backBtn = el('button', 'btn-text', 'חזרה');
+    backBtn.onclick = back;
+    title.append(el('span', '', 'תאריך ושעה'), backBtn);
+    const days = el('div', 'when-chips');
+    const go = el('button', 'btn-primary');
+    const update = () => {
+      for (const chip of days.children) chip.classList.toggle('on', chip.dataset.day === day ||
+        (chip.dataset.day === 'date' && day !== today() && day !== store.addDays(today(), 1)));
+      days.querySelector('[data-day=date] span').textContent =
+        day !== today() && day !== store.addDays(today(), 1) ? dayLabel(day) : 'תאריך';
+      const when = reminders.at(day, `${hour}:${minute}`);
+      const time = reminders.hhmm(when);
+      go.disabled = when <= new Date();
+      go.textContent = go.disabled ? 'השעה הזו כבר עברה' : `להזכיר ${dayLabel(day)} ב-${time}`;
+    };
+    for (const [key, label] of [[today(), 'היום'], [store.addDays(today(), 1), 'מחר']]) {
+      const chip = el('button', 'chip', label);
+      chip.dataset.day = key;
+      chip.onclick = () => { day = key; update(); };
+      days.append(chip);
+    }
+    const dateChip = el('label', 'chip date-chip');
+    dateChip.dataset.day = 'date';
+    const input = el('input');
+    input.type = 'date';
+    input.min = today();
+    input.setAttribute('aria-label', 'תאריך');
+    input.onchange = () => { if (input.value) { day = input.value; update(); } };
+    dateChip.append(icon('cal'), el('span', '', 'תאריך'), input);
+    days.append(dateChip);
+    const wheel = el('div', 'wheel');
+    const hours = Array.from({ length: 24 }, (_, i) => i);
+    const minutes = Array.from({ length: 12 }, (_, i) => i * 5);
+    wheel.append(
+      wheelColumn(hours, hour, v => { hour = v; update(); }),
+      el('span', 'wheel-colon', ':'),
+      wheelColumn(minutes, minute, v => { minute = v; update(); }),
+    );
+    go.onclick = () => onPick(reminders.at(day, `${hour}:${minute}`).toISOString());
+    body.append(title, days, wheel, go);
+    update();
+  });
+}
+
+// The first reminder on a device explains notifications before the iPhone asks.
+function afterReminderChosen(remindAt, next) {
+  const status = reminders.pushStatus();
+  if (!remindAt || reminders.askedBefore() || !['default', 'install'].includes(status)) return next();
+  reminders.markAsked();
+  openPermissionSheet(status, next);
+}
+
+function openPermissionSheet(status, next, fromSettings = false) {
+  openSheet(body => {
+    const wrap = el('div', 'perm');
+    const bell = el('div', 'bigbell');
+    bell.append(icon('bell'));
+    const message = el('p', '', '');
+    message.setAttribute('role', 'status');
+    if (status === 'install') {
+      wrap.append(bell, el('h3', '', 'כדי לקבל תזכורות'),
+        el('p', '', 'באייפון התראות מגיעות רק מאפליקציה שהוספה למסך הבית: בספארי לוחצים על כפתור השיתוף ואז על ״הוספה למסך הבית״.' +
+          (fromSettings ? '' : ' התזכורת נשמרה ותופיע במשימה.')));
+      const ok = el('button', 'btn-primary', 'הבנתי');
+      ok.onclick = next;
+      wrap.append(ok);
+    } else {
+      const enable = el('button', 'btn-primary', 'הפעלת תזכורות');
+      enable.onclick = async () => {
+        enable.disabled = true;
+        try { await reminders.enablePush(account); renderSettings(); next(); }
+        catch (error) { message.textContent = error.message; enable.disabled = false; }
+      };
+      const later = el('button', 'btn-text', 'לא עכשיו');
+      later.onclick = next;
+      wrap.append(bell, el('h3', '', 'שנזכיר לך בזמן?'),
+        el('p', '', 'כדי שהתזכורת תגיע גם כשהאפליקציה סגורה, צריך לאשר התראות פעם אחת במכשיר הזה.'),
+        enable, message, later);
+    }
+    body.append(wrap);
+  });
+}
+
+function renderSettings() {
+  const status = reminders.pushStatus();
+  const label = document.getElementById('notifications-status');
+  const text = {
+    install: 'דורש הוספה למסך הבית',
+    unsupported: 'לא נתמך בדפדפן הזה',
+    denied: 'חסומות בהגדרות',
+    default: 'הפעלה',
+    granted: reminders.subscriptionSaved() ? 'פעילות' : 'לא הושלם',
+  }[status];
+  label.textContent = text;
+  label.classList.toggle('on', status === 'granted' && reminders.subscriptionSaved());
+  const times = reminders.readTimes();
+  document.getElementById('time-morning').value = times.morning;
+  document.getElementById('time-evening').value = times.evening;
+}
+
+document.getElementById('btn-notifications').onclick = async () => {
+  const status = reminders.pushStatus();
+  if (status === 'default' || status === 'install') return openPermissionSheet(status, closeSheet, true);
+  if (status === 'granted') {
+    try { await reminders.syncSubscription(account); }
+    catch (error) { showToast(error.message); }
+    renderSettings();
+    return;
+  }
+  openSheet(body => {
+    body.append(el('div', 'sheet-title', 'התראות'), el('p', '', status === 'denied'
+      ? 'ההתראות חסומות. אפשר להפעיל אותן בהגדרות האייפון, תחת התראות ואז מצרכים.'
+      : 'הדפדפן הזה לא תומך בהתראות. התזכורות יופיעו במשימות עצמן.'));
+  });
+};
+for (const [id, key] of [['time-morning', 'morning'], ['time-evening', 'evening']]) {
+  document.getElementById(id).onchange = e => {
+    if (!e.target.value) return;
+    reminders.writeTimes({ ...reminders.readTimes(), [key]: e.target.value });
+  };
+}
+
+// A tapped notification opens its task.
+function openTodoById(id) {
+  const todo = state?.todos.find(t => t.id === id);
+  if (!todo) return;
+  showScreen('todos');
+  openTodoEditor(todo);
+}
+navigator.serviceWorker?.addEventListener('message', e => {
+  if (e.data?.type === 'open-todo') openTodoById(e.data.id);
+});
 
 // ---------- projects ----------
 
@@ -934,7 +1198,7 @@ document.getElementById('btn-edit-catalog').onclick = () => openCatalog(true);
 document.getElementById('tab-list').onclick = () => showScreen('list');
 document.getElementById('tab-todos').onclick = () => showScreen('todos');
 document.getElementById('tab-projects').onclick = () => { currentProject = null; renderProjects(); showScreen('projects'); };
-document.getElementById('tab-settings').onclick = () => showScreen('settings');
+document.getElementById('tab-settings').onclick = () => { renderSettings(); showScreen('settings'); };
 
 
 document.getElementById('btn-export').onclick = () => {

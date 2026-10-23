@@ -145,6 +145,14 @@ export class Cloud {
     return rows[0] || null;
   }
 
+  async savePushSubscription(subscription, owner) {
+    const token = await this.token(owner);
+    const { endpoint, keys } = subscription.toJSON();
+    await this.request('/rest/v1/rpc/save_push_subscription', {
+      p_endpoint: endpoint, p_p256dh: keys.p256dh, p_auth: keys.auth,
+    }, token);
+  }
+
   async signOut() {
     const session = this.session;
     this.storage.removeItem(this.sessionKey);

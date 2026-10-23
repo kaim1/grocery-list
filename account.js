@@ -176,6 +176,8 @@ export function initializeAccount(onState) {
     });
   } else boot();
   return {
+    cloud,
+    owner,
     save(state) {
       if (owner() !== repo.owner) { boot(); throw new Error('החשבון השתנה. נסו שוב.'); }
       try { const next = repo.save(state); idleStatus(); schedule(); return next; }
