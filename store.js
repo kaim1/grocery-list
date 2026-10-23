@@ -118,6 +118,17 @@ export function deleteTodo(state, id) {
   state.todos = state.todos.filter(t => t.id !== id);
 }
 
+// Undo support: put a removed row back where it was, unless it already came back.
+export function restoreTodo(state, todo, index) {
+  if (state.todos.some(t => t.id === todo.id)) return;
+  state.todos.splice(Math.min(index, state.todos.length), 0, todo);
+}
+
+export function restoreListEntry(state, entry, index) {
+  if (isOnList(state, entry.itemId) || !state.items.some(i => i.id === entry.itemId)) return;
+  state.list.splice(Math.min(index, state.list.length), 0, entry);
+}
+
 export function load(raw, seed) {
   if (raw == null || raw === '') return { state: createState(seed), corrupt: false };
   let doc;

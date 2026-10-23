@@ -39,3 +39,25 @@ test('blank tasks are rejected and invalid task backups are reported as corrupt'
     assert.equal(store.load(JSON.stringify({ ...state, todos }), seed).corrupt, true);
   }
 });
+
+test('undo puts a deleted task and a removed grocery back in place', () => {
+  const state = store.createState({ categories: [{ name: 'כללי' }], items: [{ name: 'חלב', cat: 0 }, { name: 'לחם', cat: 0 }] });
+  const [a, b, c] = ['א', 'ב', 'ג'].map(t => store.addTodo(state, t));
+  const index = state.todos.indexOf(b);
+  store.deleteTodo(state, b.id);
+  store.restoreTodo(state, b, index);
+  assert.deepEqual(state.todos.map(t => t.id), [a.id, b.id, c.id]);
+  store.restoreTodo(state, b, index);
+  assert.equal(state.todos.length, 3);
+  const [milk, bread] = state.items;
+  store.addToList(state, milk.id);
+  store.addToList(state, bread.id);
+  store.setQty(state, milk.id, 3);
+  const entry = { ...state.list[0] };
+  store.removeFromList(state, milk.id);
+  store.restoreListEntry(state, entry, 0);
+  assert.deepEqual(state.list, [{ itemId: milk.id, qty: 3 }, { itemId: bread.id, qty: 1 }]);
+  store.deleteItem(state, milk.id);
+  store.restoreListEntry(state, entry, 0);
+  assert.deepEqual(state.list.map(e => e.itemId), [bread.id]);
+});

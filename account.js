@@ -20,7 +20,8 @@ export function initializeAccount(onState) {
     document.getElementById('account-login').hidden = !cloud.configured || Boolean(session);
     document.getElementById('account-connected').hidden = !session;
     document.getElementById('cloud-unconfigured').hidden = cloud.configured;
-    document.getElementById('btn-account').textContent = session ? 'החשבון שלי' : 'סנכרון בין מכשירים';
+    document.getElementById('account-row-title').textContent = session?.user.email || 'התחברות וסנכרון בין מכשירים';
+    document.getElementById('account-avatar').textContent = session?.user.email?.[0]?.toUpperCase() || '?';
   }
 
   function idleStatus() {

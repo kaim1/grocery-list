@@ -3,57 +3,90 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#ffffff">
+  <meta name="theme-color" content="#f6f7f4">
   <title>מצרכים</title>
   <link rel="stylesheet" href="style.css">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-180.png">
 </head>
 <body>
-  <header>
-    <div class="heading-row"><h1>מצרכים</h1><button id="btn-account" class="account-button">סנכרון בין מכשירים</button></div>
-    <nav>
-      <button id="tab-list" class="tab active">הרשימה <span id="tab-list-count"></span></button>
-      <button id="tab-catalog" class="tab">הקטלוג</button>
-      <button id="tab-todos" class="tab">משימות <span id="tab-todos-count"></span></button>
-    </nav>
-    <p id="sync-status" role="status" aria-live="polite">טוען…</p>
-  </header>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-cart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2.2l2.3 10.3a1.2 1.2 0 0 0 1.2.9h8.2a1.2 1.2 0 0 0 1.2-.9L20 7.5H6"/><circle cx="9.5" cy="19.5" r="1.3"/><circle cx="17" cy="19.5" r="1.3"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m8.5 12.2 2.4 2.4 4.6-5"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/><circle cx="12" cy="12" r="6.5"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-tick" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 12.5 4 4 8-9"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7h15M10 4h4M6.5 7l.9 12a1.5 1.5 0 0 0 1.5 1.4h6.2a1.5 1.5 0 0 0 1.5-1.4l.9-12"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 21a2 2 0 0 0 4 0"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5z"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 7.5 12 4l8 3.5v9L12 20l-8-3.5z"/><path d="M4 7.5 12 11l8-3.5M12 11v9"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 7h11M9 12h11M9 17h11M4.5 7h.01M4.5 12h.01M4.5 17h.01"/></symbol>
+  </svg>
 
   <main>
-    <section id="screen-todos" hidden>
-      <form id="todo-form" class="todo-form">
-        <input id="todo-title" class="sheet-field" aria-label="משימה חדשה" placeholder="מה צריך לעשות?" maxlength="500" required autocomplete="off">
-        <button class="btn-primary" type="submit">הוספה</button>
-      </form>
+    <section id="screen-list" class="screen">
+      <div id="list-container"></div>
+      <p id="list-empty" class="empty" hidden>הרשימה ריקה. מוסיפים מוצרים מהשדה למטה.</p>
+    </section>
+
+    <section id="screen-todos" class="screen" hidden>
       <div id="todos-container"></div>
       <p id="todos-empty" class="empty" hidden>אין משימות פתוחות</p>
-      <details id="todos-completed" hidden>
-        <summary id="todos-completed-label">הושלמו</summary>
+      <details id="todos-completed" class="completed" hidden>
+        <summary><span>הושלמו</span><span id="todos-completed-count"></span></summary>
         <div id="todos-completed-container"></div>
       </details>
     </section>
-    <section id="screen-list">
-      <div id="list-container"></div>
-      <p id="list-empty" class="empty" hidden>הרשימה ריקה — הוסיפו פריטים מהקטלוג</p>
-      <button id="btn-add" title="הוספת מצרך">+</button>
-    </section>
 
-    <section id="screen-catalog" hidden>
-      <div class="catalog-bar">
-        <input id="search" type="search" placeholder="חיפוש או פריט חדש…" autocomplete="off">
-        <button id="btn-edit-mode" title="עריכה">עריכה</button>
+    <section id="screen-settings" class="screen" hidden>
+      <h1 class="page-title">הגדרות</h1>
+      <div class="group-label">חשבון</div>
+      <div class="group">
+        <button id="btn-account" class="setting">
+          <span id="account-avatar" class="avatar">?</span>
+          <span class="account-text"><b id="account-row-title">התחברות וסנכרון בין מכשירים</b><span id="sync-status" role="status" aria-live="polite">טוען…</span></span>
+          <span class="chev" aria-hidden="true">‹</span>
+        </button>
       </div>
-      <div id="catalog-container"></div>
-      <div class="settings">
-        <button id="btn-export">גיבוי (ייצוא)</button>
-        <button id="btn-import">שחזור (ייבוא)</button>
-        <input id="import-file" type="file" accept="application/json" hidden>
+      <div class="group-label">קניות</div>
+      <div class="group">
+        <button id="btn-edit-catalog" class="setting"><svg><use href="#i-list"/></svg><span>קטגוריות וסדר המעברים</span><span class="chev" aria-hidden="true">‹</span></button>
       </div>
+      <div class="group-label">נתונים</div>
+      <div class="group">
+        <button id="btn-export" class="setting"><svg><use href="#i-box"/></svg><span>גיבוי לקובץ</span><span class="chev" aria-hidden="true">‹</span></button>
+        <button id="btn-import" class="setting"><svg><use href="#i-box"/></svg><span>שחזור מגיבוי</span><span class="chev" aria-hidden="true">‹</span></button>
+      </div>
+      <input id="import-file" type="file" accept="application/json" hidden>
     </section>
   </main>
 
+  <button id="btn-add" class="pill" data-screen="list"><svg><use href="#i-search"/></svg>הוספה או חיפוש מצרך</button>
+  <form id="todo-form" class="pill pill-form" data-screen="todos" hidden>
+    <input id="todo-title" aria-label="משימה חדשה" placeholder="משימה חדשה" maxlength="500" autocomplete="off" enterkeyhint="done">
+  </form>
+
+  <nav class="tabbar" aria-label="ניווט ראשי">
+    <button id="tab-list" class="tab active" aria-current="page"><svg><use href="#i-cart"/></svg>קניות</button>
+    <button id="tab-todos" class="tab"><svg><use href="#i-check"/></svg>משימות</button>
+    <button id="tab-settings" class="tab"><svg><use href="#i-gear"/></svg>הגדרות</button>
+  </nav>
+
+  <section id="catalog" class="overlay" hidden aria-label="הוספת מצרכים">
+    <div class="catalog-bar">
+      <label class="search-field"><svg><use href="#i-search"/></svg><input id="search" type="search" placeholder="חיפוש או מוצר חדש" autocomplete="off" enterkeyhint="search"></label>
+      <button id="btn-catalog-done" class="link-button">סיום</button>
+    </div>
+    <div id="catalog-title" class="catalog-title" hidden>עריכת קטגוריות ומוצרים</div>
+    <div id="catalog-container"></div>
+  </section>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden><span id="toast-text"></span><button id="toast-undo">ביטול</button></div>
+
   <dialog id="sheet">
+    <div class="grab" aria-hidden="true"></div>
     <div id="sheet-body"></div>
   </dialog>
 
