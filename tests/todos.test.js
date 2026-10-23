@@ -9,7 +9,7 @@ test('old backups gain an empty todo list without losing grocery data', () => {
     items: [{ id: 'i', name: 'חלב', categoryId: 'c', lastQty: 3 }], list: [{ itemId: 'i', qty: 2 }] };
   const result = store.load(JSON.stringify(legacy), seed);
   assert.equal(result.corrupt, false);
-  assert.deepEqual(result.state, { ...legacy, todos: [] });
+  assert.deepEqual(result.state, { ...legacy, todos: [], projects: [] });
 });
 
 test('tasks can be added, edited, completed, reopened and deleted independently of groceries', () => {
@@ -100,4 +100,27 @@ test('updating a task keeps its title when the new one is blank', () => {
   assert.equal(typeof todo.doneAt, 'string');
   store.setTodoDone(state, todo.id, false);
   assert.equal(todo.doneAt, null);
+});
+
+test('projects are created, renamed, completed and deleted with or without their tasks', () => {
+  const state = store.createState(seed);
+  assert.equal(store.addProject(state, '  '), null);
+  const home = store.addProject(state, ' שיפוץ ');
+  const work = store.addProject(state, 'עבודה');
+  assert.deepEqual(store.sortedProjects(state).map(p => p.name), ['שיפוץ', 'עבודה']);
+  store.updateProject(state, home.id, { name: ' ', done: true });
+  assert.equal(home.name, 'שיפוץ');
+  assert.equal(home.done, true);
+  const a = store.addTodo(state, 'אריחים', { projectId: home.id });
+  const b = store.addTodo(state, 'צבע', { projectId: home.id });
+  const c = store.addTodo(state, 'מצגת', { projectId: work.id });
+  store.deleteProject(state, home.id, { withTasks: false });
+  assert.deepEqual([a.projectId, b.projectId], [null, null]);
+  store.deleteProject(state, work.id, { withTasks: true });
+  assert.deepEqual(state.todos.map(t => t.id), [a.id, b.id]);
+  assert.equal(c.projectId, work.id);
+  const restored = store.load(store.serialize(state), seed);
+  assert.equal(restored.corrupt, false);
+  assert.deepEqual(restored.state.projects, []);
+  assert.equal(store.load(JSON.stringify({ ...state, projects: [{ id: 'p', name: 3, order: 0 }] }), seed).corrupt, true);
 });

@@ -75,3 +75,11 @@ test('network failure retains pending changes and edits made during a save stay 
   assert.deepEqual(envelope.base.todos.map(t => t.id), ['a']);
   assert.deepEqual(envelope.state.todos.map(t => t.id), ['a', 'b']);
 });
+
+test('projects created on two devices are both kept', () => {
+  const base = doc();
+  const local = { ...doc(), projects: [{ id: 'p1', name: 'שיפוץ', order: 0, done: false }] };
+  const remote = { ...doc(), projects: [{ id: 'p2', name: 'עבודה', order: 1, done: false }] };
+  const merged = mergeDocuments(base, local, remote);
+  assert.deepEqual(new Set(merged.projects.map(p => p.id)), new Set(['p1', 'p2']));
+});

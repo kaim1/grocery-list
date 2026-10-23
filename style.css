@@ -146,6 +146,17 @@ details.category > summary { list-style: none; cursor: pointer; }
 details.category > summary::-webkit-details-marker { display: none; }
 details.category > summary h2 { margin: 1.4rem 0 .25rem; }
 
+/* projects */
+.row .proj { flex: none; max-width: 40%; font-size: .72rem; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pie {
+  flex: none; width: 1.15rem; height: 1.15rem; border-radius: 50%; padding: 2px;
+  border: 1.5px solid var(--accent); background: conic-gradient(var(--accent) calc(var(--p) * 1%), transparent 0) content-box;
+}
+.project-row .count { flex: none; font-size: .8rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+.back-button { border: 0; background: transparent; color: var(--accent); font-size: .95rem; padding: .2rem 0; }
+.project-title { display: block; border: 0; background: transparent; text-align: start; padding: 0; margin-top: .6rem; font-size: 1.45rem; font-weight: 700; }
+.project-sub { font-size: .8rem; color: var(--faint); margin: .15rem 0 .6rem; }
+
 /* settings-style rows inside sheets */
 .rows { background: var(--field); border-radius: 12px; overflow: hidden; }
 .rows .setting { font-size: .92rem; padding: .75rem .85rem; }

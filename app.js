@@ -18,7 +18,7 @@ function boot() {
 
 export function showScreen(name) {
   screen = name;
-  for (const s of ['list', 'todos', 'settings']) {
+  for (const s of ['list', 'todos', 'projects', 'settings']) {
     document.getElementById(`screen-${s}`).hidden = name !== s;
     const tab = document.getElementById(`tab-${s}`);
     tab.classList.toggle('active', name === s);
@@ -32,6 +32,7 @@ export function showScreen(name) {
 function render() {
   renderList();
   renderTodos();
+  renderProjects();
   if (!document.getElementById('catalog').hidden) renderCatalog();
 }
 
@@ -266,18 +267,27 @@ function whenLabel(when) {
 const settling = new Set();
 
 function renderTodos() {
-  const container = document.getElementById('todos-container');
-  const completed = document.getElementById('todos-completed-container');
+  const done = renderTaskGroups(
+    document.getElementById('todos-container'),
+    document.getElementById('todos-completed-container'),
+    state.todos, { showProject: true });
+  document.getElementById('todos-empty').hidden = state.todos.some(t => !t.done || settling.has(t.id));
+  document.getElementById('todos-completed').hidden = done === 0;
+  document.getElementById('todos-completed-count').textContent = done;
+}
+
+// Renders open tasks by section into `container` and completed ones into `completedContainer`.
+function renderTaskGroups(container, completedContainer, todos, options) {
   container.replaceChildren();
-  completed.replaceChildren();
-  const open = state.todos.filter(t => !t.done || settling.has(t.id));
-  const done = state.todos.filter(t => t.done && !settling.has(t.id))
+  completedContainer.replaceChildren();
+  const open = todos.filter(t => !t.done || settling.has(t.id));
+  const done = todos.filter(t => t.done && !settling.has(t.id))
     .sort((a, b) => (b.doneAt || '').localeCompare(a.doneAt || ''));
   const groups = store.groupTodos(open, today());
   for (const [key, title] of [['today', 'היום'], ['tomorrow', 'מחר'], ['upcoming', 'בהמשך'], ['anytime', 'בכל זמן']]) {
     if (!groups[key].length) continue;
     const wrap = section(title);
-    for (const todo of groups[key]) wrap.append(todoRow(todo, key));
+    for (const todo of groups[key]) wrap.append(todoRow(todo, key, options));
     container.append(wrap);
   }
   if (groups.someday.length) {
@@ -289,13 +299,11 @@ function renderTodos() {
     h.append(el('span', '', 'מתישהו'), el('span', '', String(groups.someday.length)));
     summary.append(h);
     details.append(summary);
-    for (const todo of groups.someday) details.append(todoRow(todo, 'someday'));
+    for (const todo of groups.someday) details.append(todoRow(todo, 'someday', options));
     container.append(details);
   }
-  for (const todo of done) completed.append(todoRow(todo, 'done'));
-  document.getElementById('todos-empty').hidden = open.length > 0;
-  document.getElementById('todos-completed').hidden = done.length === 0;
-  document.getElementById('todos-completed-count').textContent = done.length;
+  for (const todo of done) completedContainer.append(todoRow(todo, 'done', options));
+  return done.length;
 }
 let somedayOpen = false;
 
@@ -310,13 +318,17 @@ function todoMeta(todo, group) {
   return meta.textContent ? meta : null;
 }
 
-function todoRow(todo, group) {
+function projectName(id) {
+  return state.projects.find(p => p.id === id)?.name || null;
+}
+
+function todoRow(todo, group, options = {}) {
   const row = el('div', `row todo-row${todo.done ? ' done' : ''}`);
   const check = checkbox(`${todo.done ? 'פתיחה מחדש' : 'סיום'}: ${todo.title}`, todo.done, done => {
     store.setTodoDone(state, todo.id, done);
     if (done) {
       settling.add(todo.id);
-      setTimeout(() => { settling.delete(todo.id); renderTodos(); }, 1200);
+      setTimeout(() => { settling.delete(todo.id); render(); }, 1200);
     }
     saveAndRender();
   });
@@ -324,6 +336,8 @@ function todoRow(todo, group) {
   title.setAttribute('aria-label', `עריכת משימה: ${todo.title}`);
   title.onclick = () => openTodoEditor(todo);
   row.append(check, title);
+  const project = options.showProject && projectName(todo.projectId);
+  if (project) row.append(el('span', 'proj', project));
   const meta = group === 'done' ? null : todoMeta(todo, group);
   if (meta) row.append(meta);
   return swipeable(row, 'מחיקה', () => deleteTodo(todo));
@@ -352,7 +366,7 @@ function whenChoice(when) {
 }
 
 function openTodoEditor(todo) {
-  const draft = { title: todo.title, when: todo.when || 'anytime' };
+  const draft = { title: todo.title, when: todo.when || 'anytime', projectId: todo.projectId || null };
   const main = () => openSheet(body => {
     const title = el('input', 'sheet-field');
     title.value = draft.title;
@@ -363,12 +377,16 @@ function openTodoEditor(todo) {
     const whenRow = el('button', 'setting');
     whenRow.append(icon('cal'), el('span', '', 'מתי'), el('span', 'value', whenLabel(draft.when)), el('span', 'chev', '‹'));
     whenRow.onclick = () => pickWhen(draft.when, when => { draft.when = when; main(); });
-    rows.append(whenRow);
+    const projectRow = el('button', 'setting');
+    projectRow.append(icon('folder'), el('span', '', 'פרויקט'),
+      el('span', 'value', projectName(draft.projectId) || 'ללא'), el('span', 'chev', '‹'));
+    projectRow.onclick = () => pickProject(draft.projectId, id => { draft.projectId = id; main(); });
+    rows.append(whenRow, projectRow);
     const del = el('button', 'btn-danger-text', 'מחיקת המשימה');
     del.onclick = () => { closeSheet(); deleteTodo(todo); };
     const saveBtn = el('button', 'btn-pill', 'שמירה');
     saveBtn.onclick = () => {
-      store.updateTodo(state, todo.id, { title: draft.title, when: draft.when });
+      store.updateTodo(state, todo.id, { title: draft.title, when: draft.when, projectId: draft.projectId });
       closeSheet(); saveAndRender();
     };
     const footer = el('div', 'sheet-footer');
@@ -403,8 +421,11 @@ function pickWhen(current, onPick) {
 
 const composer = {
   when: 'anytime',
-  open() {
+  projectId: null,
+  defaultProject: null,
+  open(projectId = null) {
     this.when = 'anytime';
+    this.defaultProject = this.projectId = projectId;
     this.render();
     document.getElementById('composer').hidden = false;
     document.getElementById('todo-title').focus();
@@ -419,12 +440,16 @@ const composer = {
       chip.classList.toggle('soft-on', chip.dataset.when === choice);
     }
     document.getElementById('composer-date-label').textContent = choice === 'date' ? dayLabel(this.when) : 'תאריך';
+    const project = projectName(this.projectId);
+    document.getElementById('composer-project-label').textContent = project || 'פרויקט';
+    document.getElementById('composer-project').classList.toggle('soft-on', Boolean(project));
   },
   submit() {
     const input = document.getElementById('todo-title');
-    if (!store.addTodo(state, input.value, { when: this.when })) return;
+    if (!store.addTodo(state, input.value, { when: this.when, projectId: this.projectId })) return;
     input.value = '';
     this.when = 'anytime';
+    this.projectId = this.defaultProject;
     this.render();
     saveAndRender();
   },
@@ -448,6 +473,181 @@ document.querySelector('#composer-form .addbtn').addEventListener('pointerdown',
 document.getElementById('composer-form').onsubmit = e => { e.preventDefault(); composer.submit(); };
 document.getElementById('composer-dim').onclick = () => composer.close();
 document.getElementById('btn-new-todo').onclick = () => composer.open();
+document.getElementById('composer-project').onclick = () => {
+  pickProject(composer.projectId, id => {
+    composer.projectId = id;
+    closeSheet();
+    composer.render();
+    document.getElementById('todo-title').focus();
+  });
+};
+
+// ---------- projects ----------
+
+let currentProject = null;
+let projectsDoneOpen = false;
+
+function renderProjects() {
+  const container = document.getElementById('projects-container');
+  container.replaceChildren();
+  const pill = document.getElementById('btn-new-project');
+  const project = state.projects.find(p => p.id === currentProject);
+  if (!project) {
+    currentProject = null;
+    pill.textContent = 'פרויקט חדש';
+    pill.onclick = openNewProject;
+    const active = store.sortedProjects(state).filter(p => !p.done);
+    const finished = store.sortedProjects(state).filter(p => p.done);
+    if (!active.length && !finished.length) {
+      container.append(el('p', 'empty', 'עדיין אין פרויקטים. פרויקט מקבץ משימות עם מטרה אחת, כמו שיפוץ או יום הולדת.'));
+      return;
+    }
+    if (active.length) {
+      const wrap = section('פרויקטים');
+      for (const p of active) wrap.append(projectRow(p));
+      container.append(wrap);
+    }
+    if (finished.length) {
+      const details = el('details', 'category');
+      details.open = projectsDoneOpen;
+      details.ontoggle = () => { projectsDoneOpen = details.open; };
+      const summary = el('summary');
+      const h = el('h2');
+      h.append(el('span', '', 'הושלמו'), el('span', '', String(finished.length)));
+      summary.append(h);
+      details.append(summary);
+      for (const p of finished) details.append(projectRow(p));
+      container.append(details);
+    }
+    return;
+  }
+
+  pill.textContent = `משימה חדשה ב${project.name}`;
+  pill.onclick = () => composer.open(project.id);
+  const back = el('button', 'back-button', '› פרויקטים');
+  back.onclick = () => { currentProject = null; renderProjects(); scrollTo(0, 0); };
+  const title = el('button', 'project-title', project.name);
+  title.setAttribute('aria-label', `עריכת הפרויקט ${project.name}`);
+  title.onclick = () => openProjectSheet(project);
+  const todos = state.todos.filter(t => t.projectId === project.id);
+  const openCount = todos.filter(t => !t.done).length;
+  const sub = el('div', 'project-sub', `${openCount} פתוחות · ${todos.length - openCount} הושלמו`);
+  const groups = el('div');
+  const completedList = el('div');
+  const doneCount = renderTaskGroups(groups, completedList, todos, { showProject: false });
+  container.append(back, title, sub, groups);
+  if (!todos.length) container.append(el('p', 'empty', 'אין עדיין משימות בפרויקט'));
+  if (doneCount) {
+    const details = el('details', 'completed');
+    const summary = el('summary');
+    summary.append(el('span', '', 'הושלמו'), el('span', '', String(doneCount)));
+    details.append(summary, completedList);
+    container.append(details);
+  }
+}
+
+function projectRow(project) {
+  const todos = state.todos.filter(t => t.projectId === project.id);
+  const open = todos.filter(t => !t.done).length;
+  const row = el('button', 'row project-row');
+  row.style.width = '100%';
+  row.style.border = '0';
+  const pie = el('span', 'pie');
+  pie.style.setProperty('--p', todos.length ? Math.round(100 * (todos.length - open) / todos.length) : 0);
+  row.append(pie, el('span', 'name', project.name), el('span', 'count', open ? String(open) : ''));
+  row.onclick = () => { currentProject = project.id; renderProjects(); scrollTo(0, 0); };
+  return row;
+}
+
+function openNewProject() {
+  openSheet(body => {
+    const name = el('input', 'sheet-field');
+    name.placeholder = 'שם הפרויקט';
+    name.maxLength = 120;
+    const create = el('button', 'btn-pill', 'יצירה');
+    create.onclick = () => {
+      const project = store.addProject(state, name.value);
+      if (!project) return;
+      closeSheet(); saveAndRender();
+      currentProject = project.id;
+      renderProjects();
+    };
+    const footer = el('div', 'sheet-footer');
+    footer.append(el('span'), create);
+    body.append(el('div', 'sheet-title', 'פרויקט חדש'), name, footer);
+  });
+  document.querySelector('#sheet-body input').focus();
+}
+
+function openProjectSheet(project) {
+  openSheet(body => {
+    const name = el('input', 'sheet-field');
+    name.value = project.name;
+    name.maxLength = 120;
+    const toggle = el('button', 'btn-quiet', project.done ? 'החזרה לפרויקטים פעילים' : 'סימון הפרויקט כהושלם');
+    toggle.onclick = () => {
+      store.updateProject(state, project.id, { done: !project.done });
+      closeSheet(); saveAndRender();
+    };
+    const del = el('button', 'btn-danger-text', 'מחיקת הפרויקט');
+    const delArea = el('div', 'sheet-actions');
+    del.onclick = () => {
+      const count = state.todos.filter(t => t.projectId === project.id).length;
+      const remove = withTasks => {
+        const copy = structuredClone(state);
+        store.deleteProject(state, project.id, { withTasks });
+        currentProject = null;
+        closeSheet(); saveAndRender();
+        showToast('הפרויקט נמחק', () => { state.projects = copy.projects; state.todos = copy.todos; });
+      };
+      if (!count) return remove(false);
+      delArea.replaceChildren();
+      const keep = el('button', 'btn-quiet', 'להשאיר את המשימות');
+      keep.onclick = () => remove(false);
+      const all = el('button', 'btn-danger', `למחוק גם ${count} משימות`);
+      all.onclick = () => remove(true);
+      delArea.append(keep, all);
+    };
+    const saveBtn = el('button', 'btn-pill', 'שמירה');
+    saveBtn.onclick = () => {
+      store.updateProject(state, project.id, { name: name.value });
+      closeSheet(); saveAndRender();
+    };
+    const footer = el('div', 'sheet-footer');
+    footer.append(del, saveBtn);
+    body.append(el('div', 'sheet-label', 'שם הפרויקט'), name, toggle, footer, delArea);
+  });
+}
+
+function pickProject(current, onPick) {
+  openSheet(body => {
+    const chips = el('div', 'when-chips');
+    const none = el('button', `chip${current ? '' : ' on'}`, 'ללא פרויקט');
+    none.onclick = () => onPick(null);
+    chips.append(none);
+    for (const p of store.sortedProjects(state).filter(p => !p.done || p.id === current)) {
+      const b = el('button', `chip${p.id === current ? ' on' : ''}`);
+      b.append(icon('folder'), p.name);
+      b.onclick = () => onPick(p.id);
+      chips.append(b);
+    }
+    const name = el('input', 'sheet-field');
+    name.placeholder = 'או פרויקט חדש';
+    name.maxLength = 120;
+    name.enterKeyHint = 'done';
+    const create = el('button', 'btn-pill', 'יצירה');
+    create.onclick = () => {
+      const project = store.addProject(state, name.value);
+      if (!project) return;
+      save();
+      onPick(project.id);
+    };
+    name.onkeydown = e => { if (e.key === 'Enter') create.click(); };
+    const row = el('div', 'sheet-actions');
+    row.append(name, create);
+    body.append(el('div', 'sheet-title', 'איזה פרויקט?'), chips, row);
+  });
+}
 
 // ---------- catalog: the add/search screen ----------
 
@@ -733,6 +933,7 @@ document.getElementById('btn-edit-catalog').onclick = () => openCatalog(true);
 
 document.getElementById('tab-list').onclick = () => showScreen('list');
 document.getElementById('tab-todos').onclick = () => showScreen('todos');
+document.getElementById('tab-projects').onclick = () => { currentProject = null; renderProjects(); showScreen('projects'); };
 document.getElementById('tab-settings').onclick = () => showScreen('settings');
 
 

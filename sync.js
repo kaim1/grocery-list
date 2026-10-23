@@ -9,7 +9,7 @@ export function equal(a, b) {
 
 export function mergeDocuments(base, local, remote) {
   const merged = { version: 1 };
-  for (const collection of ['categories', 'items', 'list', 'todos']) {
+  for (const collection of ['categories', 'items', 'list', 'todos', 'projects']) {
     const key = collection === 'list' ? 'itemId' : 'id';
     const index = doc => new Map((doc?.[collection] || []).map(row => [row[key], row]));
     const b = index(base), l = index(local), r = index(remote);

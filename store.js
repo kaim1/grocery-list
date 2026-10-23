@@ -6,7 +6,7 @@ export function createState(seed) {
   const items = seed.items.map(it => ({
     id: newId(), name: it.name, categoryId: categories[it.cat].id, lastQty: 1,
   }));
-  return { version: 1, categories, items, list: [], todos: [] };
+  return { version: 1, categories, items, list: [], todos: [], projects: [] };
 }
 
 export function isOnList(state, itemId) {
@@ -159,6 +159,35 @@ export function deleteTodo(state, id) {
   state.todos = state.todos.filter(t => t.id !== id);
 }
 
+export function addProject(state, name) {
+  if (!name.trim()) return null;
+  const order = state.projects.length ? Math.max(...state.projects.map(p => p.order)) + 1 : 0;
+  const project = { id: newId(), name: name.trim(), order, done: false };
+  state.projects.push(project);
+  return project;
+}
+
+export function updateProject(state, id, fields) {
+  const project = state.projects.find(p => p.id === id);
+  if (!project) return;
+  if ('name' in fields) {
+    if (fields.name.trim()) project.name = fields.name.trim();
+    delete fields.name;
+  }
+  Object.assign(project, fields);
+}
+
+// Deleting a project either deletes its tasks or keeps them without a project.
+export function deleteProject(state, id, { withTasks }) {
+  state.projects = state.projects.filter(p => p.id !== id);
+  if (withTasks) state.todos = state.todos.filter(t => t.projectId !== id);
+  else for (const todo of state.todos) if (todo.projectId === id) todo.projectId = null;
+}
+
+export function sortedProjects(state) {
+  return [...state.projects].sort((a, b) => a.order - b.order);
+}
+
 // Undo support: put a removed row back where it was, unless it already came back.
 export function restoreTodo(state, todo, index) {
   if (state.todos.some(t => t.id === todo.id)) return;
@@ -176,6 +205,7 @@ export function load(raw, seed) {
   try { doc = JSON.parse(raw); } catch { return { state: createState(seed), corrupt: true }; }
   if (!isValidDoc(doc)) return { state: createState(seed), corrupt: true };
   doc.todos ??= [];
+  doc.projects ??= [];
   for (const todo of doc.todos) todo.when ??= 'anytime';
   doc.list = doc.list.filter(e => doc.items.some(i => i.id === e.itemId));
   return { state: doc, corrupt: false };
@@ -189,6 +219,9 @@ function isValidDoc(doc) {
     t.title.trim() && typeof t.done === 'boolean' &&
     (t.when === undefined || t.when === 'anytime' || t.when === 'someday' || DATE.test(t.when)) &&
     [t.remindAt, t.projectId, t.doneAt].every(v => v == null || typeof v === 'string')))) return false;
+  if (!Array.isArray(doc.projects ?? []) || !(doc.projects ?? []).every(p =>
+    p && typeof p.id === 'string' && typeof p.name === 'string' && typeof p.order === 'number' &&
+    typeof (p.done ?? false) === 'boolean')) return false;
   const catOk = doc.categories.every(c =>
     typeof c.id === 'string' && typeof c.name === 'string' && typeof c.order === 'number');
   const itemOk = doc.items.every(i =>
