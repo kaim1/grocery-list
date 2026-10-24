@@ -406,42 +406,56 @@ function whenChoice(when) {
 function openTodoEditor(todo) {
   const draft = { title: todo.title, when: todo.when || 'anytime', projectId: todo.projectId || null,
     remindAt: todo.remindAt || null };
+  // Every change is saved as it happens; there is no save button.
+  const update = fields => {
+    Object.assign(draft, fields);
+    store.updateTodo(state, todo.id, { ...fields });
+    saveAndRender();
+  };
+  let titleTimer;
+  const commitTitle = () => {
+    clearTimeout(titleTimer);
+    const current = state.todos.find(t => t.id === todo.id);
+    if (!current || !draft.title.trim() || draft.title.trim() === current.title) return;
+    store.updateTodo(state, todo.id, { title: draft.title });
+    saveAndRender();
+  };
   const main = () => openSheet(body => {
     const title = el('input', 'sheet-field');
     title.value = draft.title;
     title.maxLength = 500;
     title.setAttribute('aria-label', 'תוכן המשימה');
-    title.oninput = () => { draft.title = title.value; };
+    title.oninput = () => {
+      draft.title = title.value;
+      clearTimeout(titleTimer);
+      titleTimer = setTimeout(commitTitle, 600);
+    };
+    title.onchange = commitTitle;
     const rows = el('div', 'rows');
     const whenRow = el('button', 'setting');
     whenRow.append(icon('cal'), el('span', '', 'מתי'), el('span', 'value', whenLabel(draft.when)), el('span', 'chev', '‹'));
-    whenRow.onclick = () => pickWhen(draft.when, when => { draft.when = when; main(); });
+    whenRow.onclick = () => pickWhen(draft.when, when => { update({ when }); main(); });
     const projectRow = el('button', 'setting');
     projectRow.append(icon('folder'), el('span', '', 'פרויקט'),
       el('span', 'value', projectName(draft.projectId) || 'ללא'), el('span', 'chev', '‹'));
-    projectRow.onclick = () => pickProject(draft.projectId, id => { draft.projectId = id; main(); });
+    projectRow.onclick = () => pickProject(draft.projectId, projectId => { update({ projectId }); main(); });
     const timeRow = el('button', 'setting');
     const time = reminderLabel(draft.remindAt);
     timeRow.append(icon('clock'), el('span', '', 'שעה'),
       el('span', `value${time ? ' accent' : ''}`, time ? `${time} · תזכורת` : 'ללא'), el('span', 'chev', '‹'));
     timeRow.onclick = () => pickReminder(draft.remindAt, remindAt => {
-      draft.remindAt = remindAt;
-      if (remindAt) draft.when = store.dateKey(new Date(remindAt));
+      update(remindAt ? { remindAt, when: store.dateKey(new Date(remindAt)) } : { remindAt });
       afterReminderChosen(remindAt, main);
     });
     rows.append(whenRow, projectRow, timeRow);
     const del = el('button', 'btn-danger-text', 'מחיקת המשימה');
-    del.onclick = () => { closeSheet(); deleteTodo(todo); };
-    const saveBtn = el('button', 'btn-pill', 'שמירה');
-    saveBtn.onclick = () => {
-      store.updateTodo(state, todo.id, { title: draft.title, when: draft.when, projectId: draft.projectId, remindAt: draft.remindAt });
-      closeSheet(); saveAndRender();
-    };
+    del.onclick = () => { commitTitle(); closeSheet(); deleteTodo(todo); };
     const footer = el('div', 'sheet-footer');
-    footer.append(del, saveBtn);
+    footer.append(del);
     body.append(title, rows, footer);
   });
   main();
+  beforeSheetCloses = commitTitle;
 }
 
 function pickWhen(current, onPick) {
@@ -1039,11 +1053,15 @@ function renderCatalog() {
 
 // ---------- sheets ----------
 
+// Runs once when the sheet closes by any path (tap outside, drag down, a button).
+let beforeSheetCloses = null;
+
 function openSheet(build) {
+  const sheet = document.getElementById('sheet');
+  if (!sheet.open) beforeSheetCloses = null;
   const body = document.getElementById('sheet-body');
   body.textContent = '';
   build(body);
-  const sheet = document.getElementById('sheet');
   if (!sheet.open) {
     sheet.showModal();
     // Don't pop the keyboard just because a sheet opened.
@@ -1051,7 +1069,12 @@ function openSheet(build) {
   }
 }
 
-function closeSheet() { document.getElementById('sheet').close(); }
+function closeSheet() {
+  const hook = beforeSheetCloses;
+  beforeSheetCloses = null;
+  hook?.();
+  document.getElementById('sheet').close();
+}
 
 function catPicker(selectedId, onPick, excludeId) {
   const wrap = el('div', 'sheet-cats');
