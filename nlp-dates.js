@@ -34,6 +34,28 @@ function inMinutes(now, minutes) {
 
 const hour12 = (h, ampm) => (ampm.toLowerCase() === 'pm' ? h % 12 + 12 : h % 12);
 
+// "בבוקר" after an hour makes it morning; evening, night and afternoon make it PM.
+const DAYPART = '(?:\\s+(בבוקר|בערב|בלילה|אחה["״]צ|אחרי\\s+הצהריים|בצהריים))';
+const dayPart = word => (!word ? null : word === 'בבוקר' ? 'am' : word === 'בלילה' ? 'night' : 'pm');
+// At night, 12 is midnight, 1–5 are early morning and 6–11 are evening.
+function hourOf(h, m, half) {
+  if (!half || h > 12) return { h, m, sure: h === 0 || h > 12 };
+  if (half === 'night') return { h: h === 12 ? 0 : h >= 6 ? h + 12 : h, m, sure: true };
+  return { h: hour12(h, half), m, sure: true };
+}
+
+// Longest first, so "אחת עשרה" wins over "אחת".
+const HE_HOURS = [['אחת[-־\\s]עשרה', 11], ['שתי?ים[-־\\s]עשרה', 12], ['אחת', 1], ['שתי?ים', 2], ['שלוש', 3],
+  ['ארבע', 4], ['חמש', 5], ['שש', 6], ['שבע', 7], ['שמונה', 8], ['תשע', 9], ['עשר', 10]];
+const HE_MONTHS = [['ינואר', 'ינו'], ['פברואר', 'פבר'], ['מרץ', 'מרס'], ['אפריל', 'אפר'], ['מאי'], ['יוני'],
+  ['יולי'], ['אוגוסט', 'אוג'], ['ספטמבר', 'ספט'], ['אוקטובר', 'אוק'], ['נובמבר', 'נוב'], ['דצמבר', 'דצמ']];
+const EN_MONTHS = [['january', 'jan'], ['february', 'feb'], ['march', 'mar'], ['april', 'apr'], ['may'],
+  ['june', 'jun'], ['july', 'jul'], ['august', 'aug'], ['september', 'sept', 'sep'], ['october', 'oct'],
+  ['november', 'nov'], ['december', 'dec']];
+const monthOf = (list, word) => list.findIndex(names => names.includes(word.toLowerCase())) + 1;
+const HE_MONTH = `(${HE_MONTHS.flat().join('|')})['׳]?`;
+const EN_MONTH = `(${EN_MONTHS.flat().join('|')})`;
+
 // Each rule gives a day (a date key), a time ({h, m, sure} or {preset}), an exact moment, or a day and a time.
 const RULES = [
   [/היום|today/, () => ({ day: 0 })],
@@ -46,20 +68,32 @@ const RULES = [
   [/בשבוע\s+הבא|next\s+week/, (m, now) => ({ day: 7 - now.getDay() })],
   [/בעוד\s+(?:(\d+)\s+ימים|(יום)|(יומיים)|(שבוע)|(שבועיים))|in\s+(\d+)\s+days?|in\s+a\s+(week)/,
     m => ({ day: m[1] ? Number(m[1]) : m[2] ? 1 : m[3] ? 2 : m[4] || m[7] ? 7 : m[5] ? 14 : Number(m[6]) })],
+  [new RegExp(`(?:ב[-־]?)?(\\d{1,2})\\s+ב?${HE_MONTH}(?:\\s+(\\d{4}))?`),
+    (m, now) => { const key = dateOf(now, Number(m[1]), monthOf(HE_MONTHS, m[2]), m[3]); return key && { key }; }],
+  [new RegExp(`(?:on\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?${EN_MONTH}(?:,?\\s+(\\d{4}))?`),
+    (m, now) => { const key = dateOf(now, Number(m[1]), monthOf(EN_MONTHS, m[2]), m[3]); return key && { key }; }],
+  [new RegExp(`(?:on\\s+)?${EN_MONTH}\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(\\d{4}))?`),
+    (m, now) => { const key = dateOf(now, Number(m[2]), monthOf(EN_MONTHS, m[1]), m[3]); return key && { key }; }],
   [/(?:ב[-־]?)?(\d{1,2})[./](\d{1,2})(?:[./](\d{4}|\d{2}))?(?![\d./:])/,
     (m, now) => { const key = dateOf(now, Number(m[1]), Number(m[2]), m[3]); return key && { key }; }],
-  [/(?:ב[-־]?|at\s+)?(\d{1,2}):(\d{2})(?:\s*(am|pm))?(?![\d:])/, m => {
+  [new RegExp(`(?:ב[-־]?|בשעה\\s+|at\\s+)?(\\d{1,2}):(\\d{2})(?:\\s*(am|pm)|${DAYPART})?(?![\\d:])`), m => {
     const h = Number(m[1]), min = Number(m[2]);
     if (h > 23 || min > 59) return null;
-    if (m[3]) return { time: { h: hour12(h, m[3]), m: min, sure: true } };
-    return { time: { h, m: min, sure: h === 0 || h > 12 } };
+    return { time: hourOf(h, min, m[3] || dayPart(m[4])) };
   }],
-  [/(?:ב[-־]?|at\s+)(\d{1,2})(?:\s*(am|pm))?(?![\d:./])/, m => {
+  [new RegExp(`(?:ב[-־]?|בשעה\\s+|at\\s+)(\\d{1,2})(?:\\s*(am|pm)|${DAYPART})?(?![\\d:./])`), m => {
     const h = Number(m[1]);
     if (h > 23) return null;
-    if (m[2]) return h > 12 ? null : { time: { h: hour12(h, m[2]), m: 0, sure: true } };
-    return { time: { h, m: 0, sure: h === 0 || h > 12 } };
+    return { time: hourOf(h, 0, m[2] || dayPart(m[3])) };
   }],
+  // Hours in words: "בחמש", "בשמונה וחצי", "בשבע בערב". "בשש ביצים" is a quantity, not a time.
+  [new RegExp(`(?:בשעה\\s+|ב)(${HE_HOURS.map(([w]) => w).join('|')})(?!\\s+(?!פחות)\\p{L}+(?:ים|ות)(?!\\p{L}))` +
+    `(?:\\s+(וחצי|ורבע|פחות\\s+רבע))?${DAYPART}?`), m => {
+    const h = HE_HOURS.find(([w]) => new RegExp(`^(?:${w})$`, 'u').test(m[1]))[1];
+    const min = !m[2] ? 0 : m[2] === 'וחצי' ? 30 : m[2] === 'ורבע' ? 15 : -15;
+    return { time: hourOf(min < 0 ? h - 1 || 12 : h, min < 0 ? 45 : min, dayPart(m[3])) };
+  }],
+  [/בחצות|at\s+midnight|midnight/, () => ({ time: { h: 24, m: 0, sure: true } })],
   [/(\d{1,2})\s*(am|pm)/, m => (Number(m[1]) > 12 ? null : { time: { h: hour12(Number(m[1]), m[2]), m: 0, sure: true } })],
   [/בבוקר|in\s+the\s+morning/, () => ({ time: { preset: 'morning' } })],
   [/בערב|in\s+the\s+evening/, () => ({ time: { preset: 'evening' } })],
