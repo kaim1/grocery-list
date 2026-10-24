@@ -54,6 +54,35 @@ const EN_MONTHS = [['january', 'jan'], ['february', 'feb'], ['march', 'mar'], ['
   ['november', 'nov'], ['december', 'dec']];
 const monthOf = (list, word) => list.findIndex(names => names.includes(word.toLowerCase())) + 1;
 const HE_MONTH = `(${HE_MONTHS.flat().join('|')})['׳]?`;
+
+// Minutes after an hour in words ("ועשרים", "ועשרים וחמש") and before one ("עשרה לשש").
+const HE_MINUTES = [['עשרים\\s+וחמש(?:ה)?', 25], ['ארבעים\\s+וחמש(?:ה)?', 45], ['חמישים\\s+וחמש(?:ה)?', 55],
+  ['עשרים', 20], ['שלושים', 30], ['ארבעים', 40], ['חמישים', 50], ['עשרה', 10], ['עשר', 10],
+  ['חמישה', 5], ['חמש', 5], ['חצי', 30], ['רבע', 15]];
+const HE_BEFORE = [['עשרים\\s+וחמש(?:ה)?', 25], ['עשרים', 20], ['עשרה', 10], ['עשר', 10], ['חמישה', 5], ['חמש', 5], ['רבע', 15]];
+const wordValue = (list, text) => list.find(([w]) => new RegExp(`^(?:${w})$`, 'u').test(text))[1];
+const alternatives = list => list.map(([w]) => w).join('|');
+
+// Day numbers in words, masculine and feminine: "שלושה", "עשרים ושניים", "שלושים ואחת".
+const UNITS = [null, ['אחד', 'אחת', 'ראשון'], ['שניים', 'שנים', 'שני', 'שתיים', 'שתים'], ['שלושה', 'שלוש'],
+  ['ארבעה', 'ארבע'], ['חמישה', 'חמש'], ['שישה', 'שש'], ['שבעה', 'שבע'], ['שמונה'], ['תשעה', 'תשע']];
+const HE_DAY_NUMBERS = (() => {
+  const words = [];
+  const add = (n, forms) => forms.forEach(f => words.push([f.replace(/ /g, '[-־\\s]'), n]));
+  add(31, ['שלושים ואחד', 'שלושים ואחת']);
+  for (let u = 9; u >= 1; u--) add(20 + u, UNITS[u].filter(f => f !== 'ראשון').map(f => `עשרים ו${f}`));
+  for (let u = 9; u >= 1; u--) add(10 + u, UNITS[u].filter(f => f !== 'ראשון' && f !== 'שני').flatMap(f => [`${f} עשר`, `${f} עשרה`]));
+  add(30, ['שלושים']);
+  add(20, ['עשרים']);
+  add(10, ['עשרה', 'עשר']);
+  for (let u = 9; u >= 1; u--) add(u, UNITS[u]);
+  return words;
+})();
+
+// A number followed by a plural noun is a quantity: "שלושה בקבוקים", "חמש ועשרים אנשים".
+const NOT_QUANTITY = '(?!\\s+(?!פחות)\\p{L}+(?:ים|ות)(?!\\p{L}))';
+// Right after an hour, "ועשרים" or "וארבעים" are minutes, not a noun.
+const HOUR_NOT_QUANTITY = '(?!\\s+(?!פחות|ו)\\p{L}+(?:ים|ות)(?!\\p{L}))';
 const EN_MONTH = `(${EN_MONTHS.flat().join('|')})`;
 
 // Each rule gives a day (a date key), a time ({h, m, sure} or {preset}), an exact moment, or a day and a time.
@@ -68,7 +97,9 @@ const RULES = [
   [/בשבוע\s+הבא|next\s+week/, (m, now) => ({ day: 7 - now.getDay() })],
   [/בעוד\s+(?:(\d+)\s+ימים|(יום)|(יומיים)|(שבוע)|(שבועיים))|in\s+(\d+)\s+days?|in\s+a\s+(week)/,
     m => ({ day: m[1] ? Number(m[1]) : m[2] ? 1 : m[3] ? 2 : m[4] || m[7] ? 7 : m[5] ? 14 : Number(m[6]) })],
-  [new RegExp(`(?:ב[-־]?)?(\\d{1,2})\\s+ב?${HE_MONTH}(?:\\s+(\\d{4}))?`),
+  [new RegExp(`(?:ב|ה)?(${alternatives(HE_DAY_NUMBERS)})\\s+[בל]${HE_MONTH}(?:\\s+(\\d{4}))?`),
+    (m, now) => { const key = dateOf(now, wordValue(HE_DAY_NUMBERS, m[1]), monthOf(HE_MONTHS, m[2]), m[3]); return key && { key }; }],
+  [new RegExp(`(?:ב[-־]?|ה[-־]?)?(\\d{1,2})\\s+[בל]?${HE_MONTH}(?:\\s+(\\d{4}))?`),
     (m, now) => { const key = dateOf(now, Number(m[1]), monthOf(HE_MONTHS, m[2]), m[3]); return key && { key }; }],
   [new RegExp(`(?:on\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?${EN_MONTH}(?:,?\\s+(\\d{4}))?`),
     (m, now) => { const key = dateOf(now, Number(m[1]), monthOf(EN_MONTHS, m[2]), m[3]); return key && { key }; }],
@@ -86,12 +117,17 @@ const RULES = [
     if (h > 23) return null;
     return { time: hourOf(h, 0, m[2] || dayPart(m[3])) };
   }],
-  // Hours in words: "בחמש", "בשמונה וחצי", "בשבע בערב". "בשש ביצים" is a quantity, not a time.
-  [new RegExp(`(?:בשעה\\s+|ב)(${HE_HOURS.map(([w]) => w).join('|')})(?!\\s+(?!פחות)\\p{L}+(?:ים|ות)(?!\\p{L}))` +
-    `(?:\\s+(וחצי|ורבע|פחות\\s+רבע))?${DAYPART}?`), m => {
-    const h = HE_HOURS.find(([w]) => new RegExp(`^(?:${w})$`, 'u').test(m[1]))[1];
-    const min = !m[2] ? 0 : m[2] === 'וחצי' ? 30 : m[2] === 'ורבע' ? 15 : -15;
-    return { time: hourOf(min < 0 ? h - 1 || 12 : h, min < 0 ? 45 : min, dayPart(m[3])) };
+  // Hours in words: "בחמש", "בשמונה ועשרים", "בשבע בערב". "בשש ביצים" is a quantity, not a time.
+  [new RegExp(`(?:בשעה\\s+|ב)(${alternatives(HE_HOURS)})${HOUR_NOT_QUANTITY}` +
+    `(?:\\s+(?:ו(${alternatives(HE_MINUTES)})(?:\\s+דקות)?|פחות\\s+(${alternatives(HE_BEFORE)})))?${NOT_QUANTITY}${DAYPART}?`), m => {
+    const h = wordValue(HE_HOURS, m[1]);
+    if (m[3]) return { time: hourOf(h - 1 || 12, 60 - wordValue(HE_BEFORE, m[3]), dayPart(m[4])) };
+    return { time: hourOf(h, m[2] ? wordValue(HE_MINUTES, m[2]) : 0, dayPart(m[4])) };
+  }],
+  // "בעשרה לשמונה" is 7:50.
+  [new RegExp(`(?:בשעה\\s+|ב)(${alternatives(HE_BEFORE)})\\s+ל(${alternatives(HE_HOURS)})${NOT_QUANTITY}${DAYPART}?`), m => {
+    const h = wordValue(HE_HOURS, m[2]);
+    return { time: hourOf(h - 1 || 12, 60 - wordValue(HE_BEFORE, m[1]), dayPart(m[3])) };
   }],
   [/בחצות|at\s+midnight|midnight/, () => ({ time: { h: 24, m: 0, sure: true } })],
   [/(\d{1,2})\s*(am|pm)/, m => (Number(m[1]) > 12 ? null : { time: { h: hour12(Number(m[1]), m[2]), m: 0, sure: true } })],
