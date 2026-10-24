@@ -89,6 +89,10 @@
     <div id="composer-dim" class="composer-dim"></div>
     <form id="composer-form" class="composer" autocomplete="off">
       <input id="todo-title" aria-label="משימה חדשה" placeholder="משימה חדשה" maxlength="500" enterkeyhint="send">
+      <div id="composer-parsed" class="parsed-chip" hidden>
+        <svg><use href="#i-clock"/></svg><span id="composer-parsed-label"></span>
+        <button type="button" id="composer-parsed-clear" aria-label="להשאיר את המילים במשימה בלי תאריך">✕</button>
+      </div>
       <div class="chips" id="composer-when">
         <button type="button" class="chip" data-when="today">היום</button>
         <button type="button" class="chip" data-when="tomorrow">מחר</button>

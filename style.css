@@ -141,6 +141,17 @@ body.keyboard .tabbar { visibility: hidden; }
 #todo-title { border: 0; background: transparent; font: inherit; font-size: 1.05rem; color: var(--ink); padding: 0; }
 #todo-title:focus { outline: none; }
 #todo-title::placeholder { color: var(--faint); }
+.parsed-chip {
+  justify-self: start; display: inline-flex; align-items: center; gap: .35rem; margin-top: -.4rem;
+  background: var(--accent-soft); color: var(--accent); font-size: .8rem; font-weight: 600;
+  border-radius: 999px; padding: .2rem .25rem .2rem .65rem;
+}
+.parsed-chip[hidden] { display: none; }
+.parsed-chip svg { width: .8rem; height: .8rem; }
+.parsed-chip button {
+  border: 0; background: transparent; color: inherit; font: inherit; line-height: 1;
+  width: 1.5rem; height: 1.5rem; border-radius: 50%; display: grid; place-items: center;
+}
 .composer .chips { gap: .35rem; flex-wrap: nowrap; }
 .composer .chip { padding: .38rem .7rem; font-size: .85rem; white-space: nowrap; }
 .composer-foot { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 2.2rem; }

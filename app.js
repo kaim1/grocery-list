@@ -3,6 +3,7 @@ import * as store from './store.js';
 import { SEED } from './seed.js';
 import { initializeAccount } from './account.js';
 import * as reminders from './reminders.js';
+import { parseWhen, stripWhen } from './nlp-dates.js';
 
 let state;
 let account;
@@ -486,9 +487,15 @@ const composer = {
   projectId: null,
   defaultProject: null,
   remindAt: null,
+  // What the chips were set to by hand; a date typed in the title fills in the rest.
+  baseWhen: 'anytime',
+  baseRemindAt: null,
+  manualWhen: false,
+  manualTime: false,
+  parsed: null,
+  ignored: null,
   open(projectId = null) {
-    this.when = 'anytime';
-    this.remindAt = null;
+    this.reset();
     this.defaultProject = this.projectId = projectId;
     this.render();
     document.getElementById('composer').hidden = false;
@@ -497,6 +504,50 @@ const composer = {
   close() {
     document.getElementById('composer').hidden = true;
     document.getElementById('todo-title').blur();
+  },
+  reset() {
+    this.baseWhen = 'anytime';
+    this.baseRemindAt = null;
+    this.manualWhen = this.manualTime = false;
+    this.parsed = this.ignored = null;
+    this.apply();
+  },
+  parse() {
+    const text = document.getElementById('todo-title').value;
+    let found = parseWhen(text, new Date(), reminders.readTimes());
+    const phrase = found && text.slice(found.start, found.end);
+    // A match the user dismissed stays dismissed until the phrase itself changes.
+    if (found && phrase === this.ignored) found = null;
+    else this.ignored = null;
+    this.parsed = found;
+    this.apply();
+    this.render();
+  },
+  ignoreParsed() {
+    const text = document.getElementById('todo-title').value;
+    if (this.parsed) this.ignored = text.slice(this.parsed.start, this.parsed.end);
+    this.parsed = null;
+    this.apply();
+    this.render();
+  },
+  apply() {
+    const p = this.parsed;
+    this.remindAt = this.manualTime || !p?.remindAt ? this.baseRemindAt : p.remindAt.toISOString();
+    const parsedWhen = p && (p.when || (p.remindAt ? store.dateKey(p.remindAt) : null));
+    this.when = this.manualWhen || !parsedWhen ? this.baseWhen : parsedWhen;
+  },
+  setWhen(when) {
+    this.baseWhen = when;
+    this.manualWhen = true;
+    this.apply();
+    this.render();
+  },
+  setReminder(remindAt) {
+    this.baseRemindAt = remindAt;
+    this.manualTime = true;
+    if (remindAt) { this.baseWhen = store.dateKey(new Date(remindAt)); this.manualWhen = true; }
+    this.apply();
+    this.render();
   },
   render() {
     const choice = whenChoice(this.when);
@@ -510,18 +561,29 @@ const composer = {
     const project = projectName(this.projectId);
     document.getElementById('composer-project-label').textContent = project || 'פרויקט';
     document.getElementById('composer-project').classList.toggle('soft-on', Boolean(project));
+    const p = this.parsed;
+    document.getElementById('composer-parsed').hidden = !p;
+    if (p) {
+      document.getElementById('composer-parsed-label').textContent =
+        p.remindAt ? reminderLabel(p.remindAt.toISOString()) : whenLabel(p.when);
+    }
   },
   submit() {
     const input = document.getElementById('todo-title');
+    const p = this.parsed;
+    // The typed date becomes the task's date, so it leaves the title unless both chips overrode it.
+    const used = p && !(this.manualWhen && this.manualTime);
+    const title = (used && stripWhen(input.value, p)) || input.value;
     const fields = { when: this.when, projectId: this.projectId };
     if (this.remindAt) fields.remindAt = this.remindAt;
-    if (!store.addTodo(state, input.value, fields)) return;
+    if (!store.addTodo(state, title, fields)) return;
+    const parsedReminder = used && !this.manualTime ? this.remindAt : null;
     input.value = '';
-    this.when = 'anytime';
-    this.remindAt = null;
+    this.reset();
     this.projectId = this.defaultProject;
     this.render();
     saveAndRender();
+    if (parsedReminder) afterReminderChosen(parsedReminder, closeSheet);
   },
 };
 
@@ -530,26 +592,26 @@ for (const chip of document.querySelectorAll('#composer-when button.chip')) {
   chip.addEventListener('pointerdown', e => e.preventDefault());
   chip.onclick = () => {
     const when = resolveWhen(chip.dataset.when);
-    composer.when = composer.when === when ? 'anytime' : when;
-    composer.render();
+    composer.setWhen(composer.when === when ? 'anytime' : when);
   };
 }
 document.getElementById('composer-date').onchange = e => {
-  if (e.target.value) composer.when = e.target.value;
-  composer.render();
+  if (e.target.value) composer.setWhen(e.target.value);
   document.getElementById('todo-title').focus();
 };
+document.getElementById('todo-title').addEventListener('input', () => composer.parse());
+const parsedClear = document.getElementById('composer-parsed-clear');
+parsedClear.addEventListener('pointerdown', e => e.preventDefault());
+parsedClear.onclick = () => composer.ignoreParsed();
 document.querySelector('#composer-form .addbtn').addEventListener('pointerdown', e => e.preventDefault());
 document.getElementById('composer-form').onsubmit = e => { e.preventDefault(); composer.submit(); };
 document.getElementById('composer-dim').onclick = () => composer.close();
 document.getElementById('btn-new-todo').onclick = () => composer.open();
 document.getElementById('composer-time').onclick = () => {
   pickReminder(composer.remindAt, remindAt => {
-    composer.remindAt = remindAt;
-    if (remindAt) composer.when = store.dateKey(new Date(remindAt));
+    composer.setReminder(remindAt);
     afterReminderChosen(remindAt, () => {
       closeSheet();
-      composer.render();
       document.getElementById('todo-title').focus();
     });
   });

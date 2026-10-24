@@ -1,8 +1,8 @@
 // sw.js — cache-first app shell. Bump VERSION on every deploy.
-const VERSION = 'v19';
+const VERSION = 'v20';
 const ASSETS = ['.', 'index.html', 'style.css', 'app.js', 'store.js', 'seed.js',
   'account.js', 'cloud.js', 'reminders.js', 'cloud-config.js', 'sync.js', 'persistence.js',
-  'manifest.json', 'icon-180.png', 'icon-512.png'];
+  'nlp-dates.js', 'manifest.json', 'icon-180.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c =>
