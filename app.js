@@ -7,7 +7,7 @@ import { parseWhen, stripWhen } from './nlp-dates.js';
 
 let state;
 let account;
-let screen = 'list';
+let screen = 'todos';
 
 function save() {
   try { state = account.save(state); }
@@ -27,7 +27,7 @@ function boot() {
 
 export function showScreen(name) {
   screen = name;
-  for (const s of ['list', 'todos', 'projects', 'settings']) {
+  for (const s of ['todos', 'list', 'projects', 'settings']) {
     document.getElementById(`screen-${s}`).hidden = name !== s;
     const tab = document.getElementById(`tab-${s}`);
     tab.classList.toggle('active', name === s);
@@ -1336,5 +1336,5 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && st
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
 
-showScreen('list');
+showScreen('todos');
 boot();

@@ -31,13 +31,13 @@
 
   <div id="mini-head" class="mini-head" aria-hidden="true"></div>
   <main>
-    <section id="screen-list" class="screen">
+    <section id="screen-list" class="screen" hidden>
       <header class="page-head"><h1 class="page-title">קניות</h1><p class="page-sub" id="list-sub"></p></header>
       <div id="list-container"></div>
       <p id="list-empty" class="empty" hidden>הרשימה ריקה. מוסיפים מוצרים מהשדה למטה.</p>
     </section>
 
-    <section id="screen-todos" class="screen" hidden>
+    <section id="screen-todos" class="screen">
       <header class="page-head"><h1 class="page-title">משימות</h1><p class="page-sub" id="todos-sub"></p></header>
       <div id="todos-container"></div>
       <p id="todos-empty" class="empty" hidden>אין משימות פתוחות</p>
@@ -81,8 +81,8 @@
     </section>
   </main>
 
-  <button id="btn-add" class="pill" data-screen="list"><svg><use href="#i-search"/></svg>הוספה או חיפוש מצרך</button>
-  <button id="btn-new-todo" class="pill" data-screen="todos" hidden>משימה חדשה</button>
+  <button id="btn-add" class="pill" data-screen="list" hidden><svg><use href="#i-search"/></svg>הוספה או חיפוש מצרך</button>
+  <button id="btn-new-todo" class="pill" data-screen="todos">משימה חדשה</button>
   <button id="btn-new-project" class="pill" data-screen="projects" hidden>פרויקט חדש</button>
 
   <div id="composer" class="composer-layer" hidden>
@@ -110,8 +110,8 @@
   </div>
 
   <nav class="tabbar" aria-label="ניווט ראשי">
-    <button id="tab-list" class="tab active" aria-current="page"><svg><use href="#i-cart"/></svg>קניות</button>
-    <button id="tab-todos" class="tab"><svg><use href="#i-check"/></svg>משימות</button>
+    <button id="tab-todos" class="tab active" aria-current="page"><svg><use href="#i-check"/></svg>משימות</button>
+    <button id="tab-list" class="tab"><svg><use href="#i-cart"/></svg>קניות</button>
     <button id="tab-projects" class="tab"><svg><use href="#i-folder"/></svg>פרויקטים</button>
     <button id="tab-settings" class="tab"><svg><use href="#i-gear"/></svg>הגדרות</button>
   </nav>
