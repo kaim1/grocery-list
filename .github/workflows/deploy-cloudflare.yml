@@ -1,0 +1,38 @@
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-cloudflare
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect app files into _site
+        run: |
+          mkdir _site
+          rsync -a ./ _site/ \
+            --exclude '_site' --exclude '.git' --exclude '.github' \
+            --exclude 'docs' --exclude 'tests' --exclude 'supabase' \
+            --exclude '.tours' --exclude '.claude' --exclude '.wrangler' \
+            --exclude '*.md' --exclude '.gitignore' --exclude '.DS_Store'
+          ls -la _site
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@3 pages deploy _site --project-name=tasks --branch=main --commit-dirty=true
