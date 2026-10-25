@@ -124,3 +124,18 @@ test('projects are created, renamed, completed and deleted with or without their
   assert.deepEqual(restored.state.projects, []);
   assert.equal(store.load(JSON.stringify({ ...state, projects: [{ id: 'p', name: 3, order: 0 }] }), seed).corrupt, true);
 });
+
+test('notes are saved, cleared when emptied, and carried to the next repeat', () => {
+  const state = store.createState(seed);
+  const todo = store.addTodo(state, 'להתקשר לנגר', { when: '2026-10-25', repeat: { mode: 'fixed', every: 1, unit: 'week', days: [0] } });
+  store.updateTodo(state, todo.id, { notes: 'יוסי, 052-7314420' });
+  assert.equal(todo.notes, 'יוסי, 052-7314420');
+  const next = store.setTodoDone(state, todo.id, true, '2026-10-25');
+  assert.equal(next.notes, 'יוסי, 052-7314420');
+  store.updateTodo(state, todo.id, { notes: '  ' });
+  assert.equal('notes' in todo, false);
+  const reloaded = store.load(JSON.stringify(state), seed);
+  assert.equal(reloaded.corrupt, false);
+  assert.equal(reloaded.state.todos.find(t => t.id === next.id).notes, 'יוסי, 052-7314420');
+  assert.equal(store.load(JSON.stringify({ ...state, todos: [{ ...todo, notes: 5 }] }), seed).corrupt, true);
+});

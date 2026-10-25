@@ -9,6 +9,11 @@ import * as repeat from './repeat.js';
 let state;
 let account;
 let screen = 'todos';
+// From this width the tabs become a sidebar, tasks split into views and edits open beside the list.
+const wide = matchMedia('(min-width: 760px)');
+const isDesk = () => wide.matches;
+let taskView = 'today';
+let selectedId = null;
 
 function save() {
   try { state = account.save(state); }
@@ -35,6 +40,11 @@ export function showScreen(name) {
     tab.setAttribute('aria-current', name === s ? 'page' : 'false');
   }
   for (const pill of document.querySelectorAll('.pill')) pill.hidden = pill.dataset.screen !== name;
+  if (isDesk()) {
+    if (name !== 'list' && !document.getElementById('catalog').hidden) closeCatalog();
+    closePane();
+  }
+  renderSidebar();
   hideToast();
   scrollTo(0, 0);
   updateMiniHead();
@@ -45,6 +55,8 @@ function render() {
   renderTodos();
   renderProjects();
   if (!document.getElementById('catalog').hidden) renderCatalog();
+  renderSidebar();
+  refreshPane();
   updateMiniHead();
 }
 
@@ -132,7 +144,7 @@ function swipeable(row, label, onDelete) {
   const OPEN = 96;
   let startX = 0, startY = 0, dx = 0, base = 0, tracking = false, dragging = false;
   row.addEventListener('pointerdown', e => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.pointerType === 'mouse' && (e.button !== 0 || isDesk())) return;
     if (openSwipe && openSwipe !== wrap) closeOpenSwipe();
     startX = e.clientX; startY = e.clientY; dx = 0;
     base = wrap.classList.contains('open') ? OPEN : 0;
@@ -293,9 +305,16 @@ function updateMiniHead() {
 }
 addEventListener('scroll', updateMiniHead, { passive: true });
 
+const VIEWS = { today: 'היום', soon: 'בקרוב', anytime: 'בכל זמן', someday: 'מתישהו' };
+const longToday = () => new Date().toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
+
 function renderTodos() {
-  document.getElementById('todos-sub').textContent =
-    new Date().toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
+  const view = isDesk() ? taskView : null;
+  document.querySelector('#screen-todos .page-title').textContent = view ? VIEWS[view] : 'משימות';
+  document.querySelector('#todos-completed summary span').textContent = view ? 'הושלמו היום' : 'הושלמו';
+  if (view) return renderTaskView(view);
+  document.getElementById('todos-empty').textContent = 'אין משימות פתוחות';
+  document.getElementById('todos-sub').textContent = longToday();
   const done = renderTaskGroups(
     document.getElementById('todos-container'),
     document.getElementById('todos-completed-container'),
@@ -303,6 +322,49 @@ function renderTodos() {
   document.getElementById('todos-empty').hidden = state.todos.some(t => !t.done || settling.has(t.id));
   document.getElementById('todos-completed').hidden = done === 0;
   document.getElementById('todos-completed-count').textContent = done;
+}
+
+// On the desktop each view lists one kind of "when"; בקרוב has a section per day.
+function renderTaskView(view) {
+  const container = document.getElementById('todos-container');
+  const completedContainer = document.getElementById('todos-completed-container');
+  container.replaceChildren();
+  completedContainer.replaceChildren();
+  const groups = store.groupTodos(state.todos.filter(t => !t.done || settling.has(t.id)), today());
+  let shown = 0;
+  const add = (title, todos, group) => {
+    if (!todos.length) return;
+    const wrap = title ? section(title) : el('div', 'category');
+    for (const todo of todos) wrap.append(todoRow(todo, group, { showProject: true }));
+    container.append(wrap);
+    shown += todos.length;
+  };
+  if (view === 'soon') {
+    add('מחר', groups.tomorrow, 'day');
+    const byDay = new Map();
+    for (const todo of groups.upcoming) byDay.set(todo.when, [...byDay.get(todo.when) || [], todo]);
+    for (const [key, todos] of [...byDay].sort(([a], [b]) => a.localeCompare(b))) add(fullDayLabel(key), todos, 'day');
+  } else {
+    add(null, groups[view], view);
+  }
+  document.getElementById('todos-sub').textContent = view === 'today' ? longToday()
+    : shown ? count(shown, view === 'soon' ? 'משימה אחת בימים הקרובים' : 'משימה אחת', view === 'soon' ? 'משימות בימים הקרובים' : 'משימות') : '';
+  const empty = document.getElementById('todos-empty');
+  empty.textContent = { today: 'אין משימות להיום', soon: 'אין משימות בימים הקרובים', anytime: 'אין משימות בלי תאריך', someday: 'אין משימות למתישהו' }[view];
+  empty.hidden = shown > 0;
+  // Only היום lists finished tasks, and only those finished today.
+  const done = view === 'today' ? state.todos.filter(t => t.done && !settling.has(t.id) && t.doneAt && store.dateKey(new Date(t.doneAt)) === today())
+    .sort((a, b) => b.doneAt.localeCompare(a.doneAt)) : [];
+  for (const todo of done) completedContainer.append(todoRow(todo, 'done', { showProject: true }));
+  document.getElementById('todos-completed').hidden = done.length === 0;
+  document.getElementById('todos-completed-count').textContent = done.length;
+}
+
+// "מחר", or "יום שלישי · 27.10".
+function fullDayLabel(key) {
+  if (key === store.addDays(today(), 1)) return 'מחר';
+  const [y, m, d] = key.split('-').map(Number);
+  return `יום ${FULL_DAYS[new Date(y, m - 1, d).getDay()]} · ${d}.${m}`;
 }
 
 // Renders open tasks by section into `container` and completed ones into `completedContainer`.
@@ -358,6 +420,11 @@ function todoMeta(todo, group, withProject) {
     meta.append(icon('bell'));
     meta.setAttribute('aria-label', `תזכורת ${dayLabel(store.dateKey(remind))} ב-${reminders.hhmm(remind)}`);
   }
+  if (todo.notes) {
+    const note = icon('note');
+    note.classList.add('rep');
+    meta.prepend(note);
+  }
   if (todo.repeat && !todo.done) {
     const rep = icon('rep');
     rep.classList.add('rep');
@@ -371,7 +438,13 @@ function projectName(id) {
 }
 
 function todoRow(todo, group, options = {}) {
-  const row = el('div', `row todo-row${todo.done ? ' done' : ''}`);
+  const row = el('div', `row todo-row${todo.done ? ' done' : ''}${isDesk() && todo.id === selectedId ? ' sel' : ''}`);
+  row.dataset.id = todo.id;
+  if (isDesk()) {
+    row.draggable = true;
+    row.ondragstart = e => { e.dataTransfer.setData('text/x-todo', todo.id); e.dataTransfer.effectAllowed = 'move'; };
+    row.oncontextmenu = e => { e.preventDefault(); openContextMenu(todo, row, e.clientX, e.clientY); };
+  }
   const check = checkbox(`${todo.done ? 'פתיחה מחדש' : 'סיום'}: ${todo.title}`, todo.done, done => {
     const next = store.setTodoDone(state, todo.id, done);
     if (done) {
@@ -417,8 +490,9 @@ function whenChoice(when) {
   return store.DATE.test(when || '') ? 'date' : when;
 }
 
-function openTodoEditor(todo) {
-  const draft = { title: todo.title, when: todo.when || 'anytime', projectId: todo.projectId || null,
+function openTodoEditor(todo, refresh = false) {
+  const desk = isDesk();
+  const draft = { title: todo.title, notes: todo.notes || '', when: todo.when || 'anytime', projectId: todo.projectId || null,
     remindAt: todo.remindAt || null, repeat: todo.repeat || null };
   // Every change is saved as it happens; there is no save button.
   const update = fields => {
@@ -426,7 +500,7 @@ function openTodoEditor(todo) {
     store.updateTodo(state, todo.id, { ...fields });
     saveAndRender();
   };
-  let titleTimer;
+  let titleTimer, notesTimer;
   const commitTitle = () => {
     clearTimeout(titleTimer);
     const current = state.todos.find(t => t.id === todo.id);
@@ -434,63 +508,160 @@ function openTodoEditor(todo) {
     store.updateTodo(state, todo.id, { title: draft.title });
     saveAndRender();
   };
-  const main = () => openSheet(body => {
-    const title = el('input', 'sheet-field');
-    title.value = draft.title;
-    title.maxLength = 500;
-    title.setAttribute('aria-label', 'תוכן המשימה');
-    title.oninput = () => {
-      draft.title = title.value;
-      clearTimeout(titleTimer);
-      titleTimer = setTimeout(commitTitle, 600);
-    };
-    title.onchange = commitTitle;
-    const rows = el('div', 'rows');
-    const whenRow = el('button', 'setting');
-    whenRow.append(icon('cal'), el('span', '', 'מתי'), el('span', 'value', whenLabel(draft.when)), el('span', 'chev', '‹'));
-    whenRow.onclick = () => pickWhen(draft.when, when => { update({ when }); main(); });
-    const projectRow = el('button', 'setting');
-    projectRow.append(icon('folder'), el('span', '', 'פרויקט'),
-      el('span', 'value', projectName(draft.projectId) || 'ללא'), el('span', 'chev', '‹'));
-    projectRow.onclick = () => pickProject(draft.projectId, projectId => { update({ projectId }); main(); });
-    const timeRow = el('button', 'setting');
-    const time = reminderLabel(draft.remindAt);
-    timeRow.append(icon('clock'), el('span', '', 'שעה'),
-      el('span', `value${time ? ' accent' : ''}`, time ? `${time} · תזכורת` : 'ללא'), el('span', 'chev', '‹'));
-    timeRow.onclick = () => pickReminder(draft.remindAt, remindAt => {
-      update(remindAt ? { remindAt, when: store.dateKey(new Date(remindAt)) } : { remindAt });
-      afterReminderChosen(remindAt, main);
-    });
-    const repeatRow = el('button', 'setting');
-    repeatRow.append(icon('rep'), el('span', '', 'חוזר'),
-      el('span', `value${draft.repeat ? ' accent' : ''}`, draft.repeat ? repeat.describe(draft.repeat, repeatBase(draft.when)) : 'ללא'),
-      el('span', 'chev', '‹'));
-    repeatRow.onclick = () => pickRepeat(draft.repeat, repeatBase(draft.when), rule => {
-      // A repeating task needs a date; without one it starts today or on its first day.
-      update(rule && !store.DATE.test(draft.when) ? { repeat: rule, when: repeat.firstDate(rule, today()) } : { repeat: rule });
-      main();
-    });
-    rows.append(whenRow, timeRow, repeatRow, projectRow);
-    const del = el('button', 'btn-danger-text', 'מחיקת המשימה');
-    del.onclick = () => { commitTitle(); closeSheet(); deleteTodo(todo); };
-    const footer = el('div', 'sheet-footer');
-    if (draft.repeat) {
-      const skip = el('button', 'btn-text', 'דילוג לפעם הבאה');
-      skip.onclick = () => {
-        commitTitle();
-        store.skipTodo(state, todo.id);
-        closeSheet();
-        saveAndRender();
-        const moved = state.todos.find(t => t.id === todo.id);
-        if (moved) showToast(`הועברה ${toDay(moved.when)}`);
+  const commitNotes = () => {
+    clearTimeout(notesTimer);
+    const current = state.todos.find(t => t.id === todo.id);
+    if (!current || draft.notes.trim() === (current.notes || '').trim()) return;
+    store.updateTodo(state, todo.id, { notes: draft.notes });
+    saveAndRender();
+  };
+  const commit = () => { commitTitle(); commitNotes(); };
+  const main = () => {
+    const build = body => {
+      if (desk) {
+        const top = el('div', 'pane-top');
+        const close = el('button', 'pane-close', '✕');
+        close.setAttribute('aria-label', 'סגירת הפרטים');
+        close.onclick = closePane;
+        top.append(el('span', '', 'נשמר אוטומטית'), close);
+        body.append(top);
+      }
+      const title = el(desk ? 'textarea' : 'input', desk ? 'pane-title' : 'sheet-field');
+      title.value = draft.title;
+      title.maxLength = 500;
+      title.setAttribute('aria-label', 'תוכן המשימה');
+      if (desk) {
+        title.rows = 1;
+        title.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); title.blur(); } };
+      }
+      title.oninput = () => {
+        draft.title = title.value;
+        if (desk) grow(title);
+        clearTimeout(titleTimer);
+        titleTimer = setTimeout(commitTitle, 600);
       };
-      footer.append(skip);
-    }
-    footer.append(del);
-    body.append(title, rows, footer);
-  });
+      title.onchange = commitTitle;
+      const notes = el('textarea', 'notes-field');
+      notes.value = draft.notes;
+      notes.placeholder = 'הערות';
+      notes.rows = 2;
+      notes.maxLength = 5000;
+      notes.setAttribute('aria-label', 'הערות');
+      notes.oninput = () => {
+        draft.notes = notes.value;
+        grow(notes);
+        clearTimeout(notesTimer);
+        notesTimer = setTimeout(commitNotes, 600);
+      };
+      notes.onchange = commitNotes;
+      const rows = el('div', 'rows');
+      const whenRow = el('button', 'setting');
+      whenRow.append(icon('cal'), el('span', '', 'מתי'), el('span', 'value', whenLabel(draft.when)), el('span', 'chev', '‹'));
+      whenRow.onclick = () => pickWhen(draft.when, when => { update({ when }); main(); });
+      const projectRow = el('button', 'setting');
+      projectRow.append(icon('folder'), el('span', '', 'פרויקט'),
+        el('span', 'value', projectName(draft.projectId) || 'ללא'), el('span', 'chev', '‹'));
+      projectRow.onclick = () => pickProject(draft.projectId, projectId => { update({ projectId }); main(); });
+      const timeRow = el('button', 'setting');
+      const time = reminderLabel(draft.remindAt);
+      timeRow.append(icon('clock'), el('span', '', 'שעה'),
+        el('span', `value${time ? ' accent' : ''}`, time ? `${time} · תזכורת` : 'ללא'), el('span', 'chev', '‹'));
+      timeRow.onclick = () => pickReminder(draft.remindAt, remindAt => {
+        update(remindAt ? { remindAt, when: store.dateKey(new Date(remindAt)) } : { remindAt });
+        afterReminderChosen(remindAt, main);
+      });
+      const repeatRow = el('button', 'setting');
+      repeatRow.append(icon('rep'), el('span', '', 'חוזר'),
+        el('span', `value${draft.repeat ? ' accent' : ''}`, draft.repeat ? repeat.describe(draft.repeat, repeatBase(draft.when)) : 'ללא'),
+        el('span', 'chev', '‹'));
+      repeatRow.onclick = () => pickRepeat(draft.repeat, repeatBase(draft.when), rule => {
+        // A repeating task needs a date; without one it starts today or on its first day.
+        update(rule && !store.DATE.test(draft.when) ? { repeat: rule, when: repeat.firstDate(rule, today()) } : { repeat: rule });
+        main();
+      });
+      rows.append(whenRow, timeRow, repeatRow, projectRow);
+      const del = el('button', 'btn-danger-text', 'מחיקת המשימה');
+      del.onclick = () => { commit(); desk ? closePane() : closeSheet(); deleteTodo(todo); };
+      const footer = el('div', 'sheet-footer');
+      if (draft.repeat) {
+        const skip = el('button', 'btn-text', 'דילוג לפעם הבאה');
+        skip.onclick = () => {
+          commit();
+          store.skipTodo(state, todo.id);
+          if (!desk) closeSheet();
+          saveAndRender();
+          const moved = state.todos.find(t => t.id === todo.id);
+          if (moved) showToast(`הועברה ${toDay(moved.when)}`);
+        };
+        footer.append(skip);
+      }
+      footer.append(del);
+      body.append(title, notes, rows, footer);
+      requestAnimationFrame(() => { grow(notes); if (desk) grow(title); });
+    };
+    if (!desk) return openSheet(build);
+    if (!refresh && document.getElementById('sheet').open) closeSheet();
+    showPane(todo.id, build, { flush: commit, cancel: () => { clearTimeout(titleTimer); clearTimeout(notesTimer); } });
+    refresh = false;
+  };
   main();
-  beforeSheetCloses = commitTitle;
+  if (!desk) beforeSheetCloses = commit;
+}
+
+// A textarea as tall as its text.
+function grow(area) {
+  area.style.height = 'auto';
+  area.style.height = `${area.scrollHeight}px`;
+}
+
+// ---------- desktop: details pane ----------
+
+let paneTodoId = null;
+let paneHooks = null;
+
+function showPane(todoId, build, hooks) {
+  const pane = document.getElementById('pane');
+  paneHooks?.cancel();
+  paneHooks = hooks;
+  paneTodoId = selectedId = todoId;
+  if (!document.getElementById('catalog').hidden) closeCatalog();
+  pane.replaceChildren();
+  build(pane);
+  pane.hidden = false;
+  document.body.classList.add('pane-open');
+  markSelected();
+}
+
+function closePane() {
+  const pane = document.getElementById('pane');
+  if (pane.hidden) return;
+  const hooks = paneHooks;
+  paneHooks = null;
+  paneTodoId = null;
+  pane.hidden = true;
+  document.body.classList.remove('pane-open');
+  hooks?.flush();
+}
+
+// After a change made elsewhere, show the task's current state, unless the user is typing in the pane.
+function refreshPane() {
+  const pane = document.getElementById('pane');
+  if (pane.hidden) return;
+  if (!isDesk()) return closePane();
+  const todo = state.todos.find(t => t.id === paneTodoId);
+  if (!todo) {
+    paneHooks?.cancel();
+    paneHooks = null;
+    pane.hidden = true;
+    document.body.classList.remove('pane-open');
+    return;
+  }
+  if (pane.contains(document.activeElement) && document.activeElement.matches('input, textarea')) return;
+  openTodoEditor(todo, true);
+}
+
+function markSelected() {
+  for (const row of document.querySelectorAll('.todo-row')) row.classList.toggle('sel', row.dataset.id === selectedId);
 }
 
 const MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
@@ -653,6 +824,7 @@ const composer = {
   when: 'anytime',
   projectId: null,
   defaultProject: null,
+  defaultWhen: 'anytime',
   remindAt: null,
   // What the chips were set to by hand; a date typed in the title fills in the rest.
   repeat: null,
@@ -664,7 +836,8 @@ const composer = {
   manualRepeat: false,
   parsed: null,
   ignored: null,
-  open(projectId = null) {
+  open(projectId = null, when = 'anytime') {
+    this.defaultWhen = when;
     this.reset();
     this.defaultProject = this.projectId = projectId;
     this.render();
@@ -676,7 +849,7 @@ const composer = {
     document.getElementById('todo-title').blur();
   },
   reset() {
-    this.baseWhen = 'anytime';
+    this.baseWhen = this.defaultWhen;
     this.baseRemindAt = null;
     this.baseRepeat = null;
     this.manualWhen = this.manualTime = this.manualRepeat = false;
@@ -787,7 +960,10 @@ parsedClear.onclick = () => composer.ignoreParsed();
 document.querySelector('#composer-form .addbtn').addEventListener('pointerdown', e => e.preventDefault());
 document.getElementById('composer-form').onsubmit = e => { e.preventDefault(); composer.submit(); };
 document.getElementById('composer-dim').onclick = () => composer.close();
-document.getElementById('btn-new-todo').onclick = () => composer.open();
+// On the desktop a new task starts in the view it was added from.
+const viewWhen = () => ({ today: today(), soon: store.addDays(today(), 1), anytime: 'anytime', someday: 'someday' })[taskView];
+document.getElementById('btn-new-todo').onclick = () => composer.open(null, isDesk() ? viewWhen() : 'anytime');
+document.getElementById('todo-title').addEventListener('keydown', e => { if (e.key === 'Escape') composer.close(); });
 document.getElementById('composer-time').onclick = () => {
   pickReminder(composer.remindAt, remindAt => {
     composer.setReminder(remindAt);
@@ -1112,6 +1288,7 @@ function openNewProject() {
       closeSheet(); saveAndRender();
       currentProject = project.id;
       renderProjects();
+      if (screen !== 'projects') showScreen('projects');
     };
     const footer = el('div', 'sheet-footer');
     footer.append(el('span'), create);
@@ -1202,14 +1379,17 @@ function openCatalog(edit = false) {
   search.value = '';
   document.getElementById('catalog-title').hidden = !edit;
   document.querySelector('.search-field').hidden = edit;
+  if (isDesk()) closePane();
   document.getElementById('catalog').hidden = false;
-  document.body.style.overflow = 'hidden';
+  document.body.classList.toggle('catalog-open', true);
+  if (!isDesk()) document.body.style.overflow = 'hidden';
   renderCatalog();
   if (!edit) search.focus();
 }
 
 function closeCatalog() {
   document.getElementById('catalog').hidden = true;
+  document.body.classList.remove('catalog-open');
   document.body.style.overflow = '';
   editMode = false;
   render();
@@ -1301,15 +1481,42 @@ let beforeSheetCloses = null;
 
 function openSheet(build) {
   const sheet = document.getElementById('sheet');
-  if (!sheet.open) beforeSheetCloses = null;
+  const wasOpen = sheet.open;
+  if (!wasOpen) beforeSheetCloses = null;
   const body = document.getElementById('sheet-body');
   body.textContent = '';
   build(body);
-  if (!sheet.open) {
+  if (!wasOpen) {
     sheet.showModal();
     // Don't pop the keyboard just because a sheet opened.
-    if (document.activeElement?.matches('input')) document.activeElement.blur();
+    if (!isDesk() && document.activeElement?.matches('input')) document.activeElement.blur();
   }
+  placeSheet(wasOpen);
+}
+
+// On the desktop a sheet is a small popover beside the control that opened it.
+let anchor = null;
+document.addEventListener('pointerdown', e => {
+  if (!e.target.closest?.('#sheet')) anchor = e.target.closest?.('button, label, .row, .chip') || null;
+}, true);
+
+function placeSheet(keep) {
+  const sheet = document.getElementById('sheet');
+  if (!isDesk()) { sheet.style.top = sheet.style.left = ''; return; }
+  const w = sheet.offsetWidth, h = sheet.offsetHeight, vw = innerWidth, vh = innerHeight, gap = 8;
+  if (keep) {
+    const top = parseFloat(sheet.style.top) || 0;
+    if (top + h > vh - 12) sheet.style.top = `${Math.max(12, vh - 12 - h)}px`;
+    return;
+  }
+  const r = anchor?.isConnected && !anchor.closest('[hidden]') ? anchor.getBoundingClientRect() : null;
+  let top = (vh - h) / 3, left = (vw - w) / 2;
+  if (r && r.width) {
+    left = Math.min(Math.max(12, r.right - w), vw - w - 12);
+    top = r.bottom + gap + h <= vh - 12 ? r.bottom + gap : r.top - gap - h;
+  }
+  sheet.style.left = `${left}px`;
+  sheet.style.top = `${Math.max(12, Math.min(top, vh - 12 - h))}px`;
 }
 
 function closeSheet() {
@@ -1471,12 +1678,294 @@ if (window.visualViewport) {
   vv.addEventListener('scroll', update);
 }
 
+// ---------- desktop: sidebar ----------
+
+const VIEW_ICONS = { today: 'sun', soon: 'cal', anytime: 'list', someday: 'box' };
+
+function showTaskView(view) {
+  taskView = view;
+  renderTodos();
+  showScreen('todos');
+}
+
+function showProject(id) {
+  currentProject = id;
+  renderProjects();
+  showScreen('projects');
+}
+
+function renderSidebar() {
+  const nav = document.getElementById('sidebar');
+  if (!isDesk() || !state) return nav.replaceChildren();
+  const groups = store.groupTodos(state.todos.filter(t => !t.done), today());
+  const counts = { today: groups.today.length, soon: groups.tomorrow.length + groups.upcoming.length,
+    anytime: groups.anytime.length, someday: groups.someday.length };
+  const item = (label, symbol, n, on, onClick, drop) => {
+    const b = el('button', `side-item${on ? ' on' : ''}`);
+    b.append(icon(symbol), el('span', 'label', label), el('span', 'n', n ? String(n) : ''));
+    if (on) b.setAttribute('aria-current', 'page');
+    b.onclick = onClick;
+    if (drop) dropTarget(b, drop);
+    return b;
+  };
+  const items = [];
+  for (const [view, label] of Object.entries(VIEWS)) {
+    items.push(item(label, VIEW_ICONS[view], counts[view], screen === 'todos' && taskView === view, () => showTaskView(view),
+      todo => ({ when: viewWhenFor(view, todo) })));
+  }
+  items.push(el('div', 'side-sep'));
+  items.push(item('קניות', 'cart', state.list.length, screen === 'list', () => showScreen('list')));
+  const head = el('div', 'side-label');
+  const all = el('button', '', 'פרויקטים');
+  all.onclick = () => showProject(null);
+  const add = el('button', 'side-add', '+ חדש');
+  add.onclick = openNewProject;
+  head.append(all, add);
+  items.push(head);
+  for (const p of store.sortedProjects(state).filter(p => !p.done)) {
+    const open = state.todos.filter(t => t.projectId === p.id && !t.done).length;
+    items.push(item(p.name, 'folder', open, screen === 'projects' && currentProject === p.id, () => showProject(p.id),
+      () => ({ projectId: p.id })));
+  }
+  items.push(el('div', 'side-grow'));
+  items.push(item('הגדרות', 'gear', 0, screen === 'settings', () => { renderSettings(); showScreen('settings'); }));
+  nav.replaceChildren(...items);
+}
+
+// Dropping a task on היום or מחר moves it there; a task keeps its own date when dropped on בקרוב if it already has a later one.
+function viewWhenFor(view, todo) {
+  if (view === 'soon') return todo.when > today() && store.DATE.test(todo.when) ? todo.when : store.addDays(today(), 1);
+  return ({ today: today(), anytime: 'anytime', someday: 'someday' })[view];
+}
+
+function dropTarget(target, fields) {
+  target.addEventListener('dragover', e => {
+    if (!e.dataTransfer.types.includes('text/x-todo')) return;
+    e.preventDefault();
+    target.classList.add('drop');
+  });
+  target.addEventListener('dragleave', () => target.classList.remove('drop'));
+  target.addEventListener('drop', e => {
+    target.classList.remove('drop');
+    const todo = state.todos.find(t => t.id === e.dataTransfer.getData('text/x-todo'));
+    if (!todo) return;
+    e.preventDefault();
+    changeTodo(todo, fields(todo), 'הועברה');
+  });
+}
+
+// A quick change from the menu, the keyboard or a drag, with an undo toast.
+function changeTodo(todo, fields, message) {
+  const before = Object.fromEntries(Object.keys(fields).map(k => [k, todo[k] ?? null]));
+  store.updateTodo(state, todo.id, fields);
+  saveAndRender();
+  const where = fields.projectId ? `ל${projectName(fields.projectId)}`
+    : 'when' in fields ? (store.DATE.test(fields.when) ? toDay(fields.when) : `ל${whenLabel(fields.when)}`) : '';
+  showToast(`${message} ${where}`.trim(), () => store.updateTodo(state, todo.id, before));
+}
+
+// ---------- desktop: right-click menu ----------
+
+function openContextMenu(todo, row, x, y) {
+  selectedId = todo.id;
+  markSelected();
+  const menu = document.getElementById('ctx-menu');
+  const choice = whenChoice(todo.when || 'anytime');
+  const item = (symbol, label, key, onClick, { checked = false, danger = false, sub = false } = {}) => {
+    const b = el('button', `ctx-item${danger ? ' danger' : ''}`);
+    b.setAttribute('role', 'menuitem');
+    b.append(icon(symbol), el('span', 'label', label));
+    if (checked) b.append(el('span', 'ck', '✓'));
+    else if (key) b.append(el('kbd', '', key));
+    else if (sub) b.append(el('span', 'ar', '‹'));
+    b.onclick = () => { closeContextMenu(); anchor = row; onClick(); };
+    return b;
+  };
+  const a = todoActions(todo);
+  menu.replaceChildren(
+    item('sun', 'היום', 'T', a.today, { checked: choice === 'today' }),
+    item('cal', 'מחר', 'M', a.tomorrow, { checked: choice === 'tomorrow' }),
+    item('cal', 'תאריך…', 'D', a.date),
+    item('box', 'מתישהו', '', a.someday, { checked: choice === 'someday' }),
+    el('hr'),
+    item('clock', 'שעה ותזכורת…', '', a.reminder),
+    item('rep', 'חוזר…', '', a.repeat),
+    item('folder', 'העברה לפרויקט', '', a.project, { sub: true }),
+    el('hr'),
+    item('trash', 'מחיקה', '⌫', a.remove, { danger: true }),
+  );
+  menu.hidden = false;
+  const w = menu.offsetWidth, h = menu.offsetHeight;
+  // In a right-to-left page the menu opens to the left of the pointer.
+  menu.style.left = `${Math.max(8, Math.min(x - w, innerWidth - w - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(y, innerHeight - h - 8))}px`;
+  menu.querySelector('button').focus({ preventScroll: true });
+}
+
+function closeContextMenu() {
+  document.getElementById('ctx-menu').hidden = true;
+}
+document.addEventListener('pointerdown', e => { if (!e.target.closest?.('#ctx-menu')) closeContextMenu(); }, true);
+addEventListener('blur', closeContextMenu);
+addEventListener('resize', closeContextMenu);
+document.addEventListener('scroll', closeContextMenu, { passive: true, capture: true });
+
+// What the menu and the keyboard can do to one task.
+function todoActions(todo) {
+  return {
+    today: () => changeTodo(todo, { when: today() }, 'הועברה'),
+    tomorrow: () => changeTodo(todo, { when: store.addDays(today(), 1) }, 'הועברה'),
+    someday: () => changeTodo(todo, { when: 'someday' }, 'הועברה'),
+    date: () => pickWhen(todo.when, when => { closeSheet(); changeTodo(todo, { when }, 'הועברה'); }),
+    reminder: () => pickReminder(todo.remindAt || null, remindAt => {
+      store.updateTodo(state, todo.id, remindAt ? { remindAt, when: store.dateKey(new Date(remindAt)) } : { remindAt });
+      saveAndRender();
+      afterReminderChosen(remindAt, closeSheet);
+    }),
+    repeat: () => pickRepeat(todo.repeat || null, repeatBase(todo.when), rule => {
+      store.updateTodo(state, todo.id, rule && !store.DATE.test(todo.when || '') ? { repeat: rule, when: repeat.firstDate(rule, today()) } : { repeat: rule });
+      closeSheet();
+      saveAndRender();
+    }),
+    project: () => pickProject(todo.projectId || null, projectId => { closeSheet(); changeTodo(todo, { projectId }, 'הועברה'); }),
+    remove: () => { if (paneTodoId === todo.id) closePane(); deleteTodo(todo); },
+  };
+}
+
+// ---------- desktop: keyboard ----------
+
+const SHORTCUTS = [
+  ['N', 'משימה חדשה, או הוספת מוצר בקניות'],
+  ['↑ ↓', 'מעבר בין משימות'],
+  ['Enter', 'פתיחת הפרטים'],
+  ['רווח', 'סימון כבוצע'],
+  ['T  M', 'להיום, למחר'],
+  ['D', 'בחירת תאריך'],
+  ['⌫', 'מחיקה'],
+  ['⌘Z', 'ביטול הפעולה האחרונה'],
+  ['1–5', 'היום, בקרוב, בכל זמן, מתישהו, קניות'],
+  ['Esc', 'סגירה'],
+];
+
+function openShortcuts() {
+  anchor = null;
+  openSheet(body => {
+    const list = el('div', 'keys');
+    for (const [key, label] of SHORTCUTS) list.append(el('kbd', '', key), el('span', '', label));
+    body.append(el('div', 'sheet-title', 'קיצורי מקלדת'), list);
+  });
+}
+
+const visibleRows = () => [...document.querySelectorAll('.screen:not([hidden]) .todo-row:not(.done)')];
+
+function moveSelection(step) {
+  const rows = visibleRows();
+  if (!rows.length) return;
+  const at = rows.findIndex(r => r.dataset.id === selectedId);
+  const next = rows[at === -1 ? (step > 0 ? 0 : rows.length - 1) : Math.min(rows.length - 1, Math.max(0, at + step))];
+  selectedId = next.dataset.id;
+  markSelected();
+  next.scrollIntoView({ block: 'nearest' });
+  if (paneTodoId) openTodoEditor(state.todos.find(t => t.id === selectedId));
+}
+
+document.addEventListener('keydown', e => {
+  if (!isDesk() || e.isComposing) return;
+  const typing = e.target.closest?.('input, textarea, select, [contenteditable]');
+  const sheetOpen = document.getElementById('sheet').open;
+  const menu = document.getElementById('ctx-menu');
+  if (e.key === 'Escape') {
+    if (!menu.hidden) { closeContextMenu(); return; }
+    if (sheetOpen || typing) return;
+    if (!document.getElementById('pane').hidden) { closePane(); return; }
+    if (!document.getElementById('catalog').hidden) { closeCatalog(); return; }
+    if (selectedId) { selectedId = null; markSelected(); }
+    return;
+  }
+  if (!menu.hidden && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    e.preventDefault();
+    const items = [...menu.querySelectorAll('button')];
+    const at = items.indexOf(document.activeElement);
+    items[(at + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
+    return;
+  }
+  if (typing || sheetOpen || !menu.hidden || !document.getElementById('composer').hidden) return;
+  if ((e.metaKey || e.ctrlKey) && e.code === 'KeyZ' && !e.shiftKey) {
+    const undo = document.getElementById('toast-undo');
+    if (!document.getElementById('toast').hidden && !undo.hidden) { e.preventDefault(); undo.click(); }
+    return;
+  }
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  // Physical keys, so the shortcuts also work with the Hebrew layout.
+  const selected = state?.todos.find(t => t.id === selectedId && visibleRows().some(r => r.dataset.id === t.id));
+  const row = selected && document.querySelector(`.screen:not([hidden]) .todo-row[data-id="${selected.id}"]`);
+  const act = fn => { e.preventDefault(); fn(); };
+  const views = ['today', 'soon', 'anytime', 'someday'];
+  if (e.key === '?') return act(openShortcuts);
+  if (/^Digit[1-5]$/.test(e.code)) {
+    const n = Number(e.code.slice(5));
+    return act(() => (n === 5 ? showScreen('list') : showTaskView(views[n - 1])));
+  }
+  if (e.code === 'KeyN' || (e.code === 'Slash' && screen === 'list')) {
+    if (screen === 'list') return act(() => openCatalog(false));
+    if (screen === 'todos' || (screen === 'projects' && currentProject)) {
+      return act(() => document.querySelector('.pill:not([hidden])').click());
+    }
+    return;
+  }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') return act(() => moveSelection(e.key === 'ArrowDown' ? 1 : -1));
+  if (!selected) return;
+  const a = todoActions(selected);
+  anchor = row;
+  if (e.key === 'Enter') return act(() => openTodoEditor(selected));
+  if (e.code === 'Space') {
+    return act(() => { const check = row.querySelector('input[type=checkbox]'); check.click(); });
+  }
+  if (e.code === 'KeyT') return act(a.today);
+  if (e.code === 'KeyM') return act(a.tomorrow);
+  if (e.code === 'KeyD') return act(a.date);
+  if (e.key === 'Backspace' || e.key === 'Delete') {
+    return act(() => {
+      const rows = visibleRows();
+      const at = rows.indexOf(row);
+      const next = rows[at + 1] || rows[at - 1];
+      a.remove();
+      selectedId = next?.dataset.id || null;
+      markSelected();
+    });
+  }
+});
+
+wide.addEventListener('change', () => {
+  closePane();
+  closeContextMenu();
+  if (!document.getElementById('sheet').open) document.getElementById('sheet').style.top = '';
+  if (state) render();
+  showScreen(screen);
+});
+
 // ---------- wiring ----------
 
 document.getElementById('search').oninput = e => {
   searchTerm = e.target.value;
   renderCatalog();
 };
+// On the desktop Enter adds the first match, or offers the typed name as a new product.
+document.getElementById('search').addEventListener('keydown', e => {
+  if (e.key === 'Escape' && isDesk()) { closeCatalog(); return; }
+  if (e.key !== 'Enter' || !isDesk() || editMode) return;
+  const term = searchTerm.trim();
+  if (!term) return;
+  e.preventDefault();
+  const match = state.items.filter(i => i.name.includes(term))
+    .sort((a, b) => (b.name.startsWith(term) - a.name.startsWith(term)) || a.name.localeCompare(b.name, 'he'))[0];
+  if (!match) return openAddItemSheet(term);
+  if (!store.isOnList(state, match.id)) store.addToList(state, match.id);
+  searchTerm = '';
+  e.target.value = '';
+  saveAndRender();
+  showToast(`${match.name} נוסף לרשימה`);
+});
 document.getElementById('btn-catalog-done').onclick = closeCatalog;
 document.getElementById('btn-add').onclick = () => openCatalog(false);
 document.getElementById('btn-edit-catalog').onclick = () => openCatalog(true);

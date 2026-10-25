@@ -124,6 +124,8 @@ export function updateTodo(state, id, fields) {
   const todo = state.todos.find(t => t.id === id);
   if (!todo) return;
   if ('title' in fields && !fields.title.trim()) delete fields.title;
+  // Empty notes leave no trace on the task.
+  if ('notes' in fields && !fields.notes?.trim()) { delete fields.notes; delete todo.notes; }
   Object.assign(todo, fields, 'title' in fields ? { title: fields.title.trim() } : {});
 }
 
@@ -167,6 +169,7 @@ export function setTodoDone(state, id, done, today = dateKey(new Date())) {
   const when = nextDate(todo.repeat, base, today);
   const next = { id: newId(), title: todo.title, done: false, when, repeat: todo.repeat };
   if (todo.projectId) next.projectId = todo.projectId;
+  if (todo.notes) next.notes = todo.notes;
   if (todo.remindAt) next.remindAt = shiftReminder(todo.remindAt, base, when);
   state.todos.push(next);
   todo.nextId = next.id;
@@ -247,7 +250,7 @@ function isValidDoc(doc) {
     t && typeof t.id === 'string' && typeof t.title === 'string' &&
     t.title.trim() && typeof t.done === 'boolean' &&
     (t.when === undefined || t.when === 'anytime' || t.when === 'someday' || DATE.test(t.when)) &&
-    [t.remindAt, t.projectId, t.doneAt].every(v => v == null || typeof v === 'string')))) return false;
+    [t.remindAt, t.projectId, t.doneAt, t.notes].every(v => v == null || typeof v === 'string')))) return false;
   if (!Array.isArray(doc.projects ?? []) || !(doc.projects ?? []).every(p =>
     p && typeof p.id === 'string' && typeof p.name === 'string' && typeof p.order === 'number' &&
     typeof (p.done ?? false) === 'boolean')) return false;
