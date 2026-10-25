@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Cloud } from '../cloud.js';
+import { Cloud, sendLinkError } from '../cloud.js';
 
 function storage() {
   const values = new Map();
@@ -192,4 +192,40 @@ test('pasted link reports failure if the verified session cannot be saved on the
   const cloud = new Cloud(config, disk, async () => Response.json(session));
   await assert.rejects(cloud.consumeEmailLink(`${config.url}/auth/v1/verify?token=hash&type=magiclink`), /לא הצלחנו לשמור את ההתחברות במכשיר/);
   assert.equal(cloud.session, null);
+});
+
+test('sign-in email and verify requests get 30 seconds, other requests 15', async () => {
+  const timeouts = [];
+  const original = AbortSignal.timeout;
+  AbortSignal.timeout = ms => { timeouts.push(ms); return original.call(AbortSignal, ms); };
+  try {
+    const cloud = new Cloud(config, storage(), async url => url.endsWith('/verify') ? Response.json(session) : Response.json([]));
+    await cloud.sendLink('a@example.com', 'https://app.example/');
+    await cloud.sendCode('a@example.com');
+    await cloud.verify('a@example.com', '123456');
+    await cloud.readDocument('owner');
+  } finally { AbortSignal.timeout = original; }
+  assert.deepEqual(timeouts, [30000, 30000, 30000, 15000]);
+});
+
+test('timeouts and network failures become Hebrew errors, not the browser text', async () => {
+  for (const [failure, code, expected] of [
+    [new DOMException('Fetch is aborted', 'AbortError'), 'timeout', /השרת לא ענה בזמן/],
+    [new DOMException('The operation timed out.', 'TimeoutError'), 'timeout', /השרת לא ענה בזמן/],
+    [new TypeError('Load failed'), 'network', /אין חיבור לשרת/],
+  ]) {
+    const cloud = new Cloud(config, storage(), async () => { throw failure; });
+    const error = await cloud.sendLink('a@example.com', 'https://app.example/').catch(e => e);
+    assert.equal(error.code, code);
+    assert.match(error.message, expected);
+  }
+});
+
+test('sign-in email errors explain timeouts and the hourly email limit in Hebrew', async () => {
+  const fail = (result, status) => new Cloud(config, storage(), async () => Response.json(result, { status }))
+    .sendLink('a@example.com', 'https://app.example/').catch(sendLinkError);
+  assert.match(await fail({ code: 429, error_code: 'over_email_send_rate_limit', msg: 'email rate limit exceeded' }, 429), /יותר מדי מיילים בשעה האחרונה/);
+  assert.match(await fail({ msg: 'email rate limit exceeded' }, 400), /יותר מדי מיילים בשעה האחרונה/);
+  assert.match(sendLinkError({ code: 'timeout', message: 'x' }), /ייתכן שהמייל בכל זאת נשלח/);
+  assert.equal(sendLinkError(new Error('אחר')), 'אחר');
 });

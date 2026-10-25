@@ -1,4 +1,15 @@
 // Supabase REST boundary. Public keys are safe to ship; authorization is enforced in SQL.
+export const AUTH_TIMEOUT = 30000;
+
+// Hebrew message for a failed request for a sign-in email.
+export function sendLinkError(error) {
+  if (error.code === 'timeout') return 'השרת לא ענה בזמן. ייתכן שהמייל בכל זאת נשלח, כדאי לבדוק בתיבה לפני שמנסים שוב.';
+  if (error.status === 429 || error.code === 'over_email_send_rate_limit' || /rate limit/i.test(error.message)) {
+    return 'נשלחו יותר מדי מיילים בשעה האחרונה. אפשר לנסות שוב בעוד כשעה, או להשתמש בקישור מהמייל הקודם.';
+  }
+  return error.message;
+}
+
 export class Cloud {
   constructor(config, storage, fetcher = globalThis.fetch.bind(globalThis)) {
     this.url = config.url.replace(/\/$/, '');
@@ -23,16 +34,25 @@ export class Cloud {
     return value;
   }
 
-  async request(path, body, token) {
+  async request(path, body, token, timeout = 15000) {
     if (!this.configured) throw new Error('הסנכרון בענן עדיין לא הוגדר');
     const headers = { apikey: this.key, 'Content-Type': 'application/json' };
     if (token) headers.Authorization = `Bearer ${token}`;
-    const response = await this.fetcher(`${this.url}${path}`, {
-      method: body === undefined ? 'GET' : 'POST', headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-      cache: 'no-store', signal: AbortSignal.timeout(15000),
-    });
-    const text = await response.text();
+    let response, text;
+    try {
+      response = await this.fetcher(`${this.url}${path}`, {
+        method: body === undefined ? 'GET' : 'POST', headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+        cache: 'no-store', signal: AbortSignal.timeout(timeout),
+      });
+      text = await response.text();
+    } catch (cause) {
+      // Browsers report these in English ("Fetch is aborted", "Load failed").
+      const timedOut = cause?.name === 'TimeoutError' || cause?.name === 'AbortError';
+      const error = new Error(timedOut ? 'השרת לא ענה בזמן. נסו שוב.' : 'אין חיבור לשרת. בדקו את החיבור לאינטרנט ונסו שוב.');
+      error.code = timedOut ? 'timeout' : 'network';
+      throw error;
+    }
     let result;
     try { result = text ? JSON.parse(text) : null; } catch { throw new Error('תגובה לא תקינה מהשרת'); }
     if (!response.ok) {
@@ -44,11 +64,12 @@ export class Cloud {
     return result;
   }
 
-  async sendCode(email) { await this.request('/auth/v1/otp', { email, create_user: true }); }
+  // Supabase's mail server can take well over 15 seconds to answer.
+  async sendCode(email) { await this.request('/auth/v1/otp', { email, create_user: true }, undefined, AUTH_TIMEOUT); }
   async sendLink(email, redirectTo) {
     await this.request(`/auth/v1/otp?${new URLSearchParams({ redirect_to: redirectTo })}`, {
       email, create_user: true,
-    });
+    }, undefined, AUTH_TIMEOUT);
   }
 
   async consumeRedirect(url) {
@@ -76,7 +97,7 @@ export class Cloud {
   }
 
   async verify(email, token) {
-    return this.saveSession(await this.request('/auth/v1/verify', { email, token, type: 'email' }));
+    return this.saveSession(await this.request('/auth/v1/verify', { email, token, type: 'email' }, undefined, AUTH_TIMEOUT));
   }
 
   async consumeEmailLink(value) {
@@ -96,7 +117,7 @@ export class Cloud {
     let result;
     try {
       // GET /verify calls this field `token`; POST expects the same value as token_hash.
-      result = await this.request('/auth/v1/verify', { token_hash: token, type });
+      result = await this.request('/auth/v1/verify', { token_hash: token, type }, undefined, AUTH_TIMEOUT);
     } catch (error) {
       if (error.code === 'otp_expired') {
         throw new Error('הקישור כבר נוצל או שפג תוקפו. בקשו קישור חדש והעתיקו אותו מהמייל בלי לפתוח אותו.');

@@ -1,5 +1,5 @@
 // sw.js — cache-first app shell. Bump VERSION on every deploy.
-const VERSION = 'v26';
+const VERSION = 'v27';
 const ASSETS = ['.', 'index.html', 'style.css', 'app.js', 'store.js', 'seed.js',
   'account.js', 'cloud.js', 'reminders.js', 'cloud-config.js', 'sync.js', 'persistence.js',
   'nlp-dates.js', 'repeat.js', 'manifest.json', 'icon-180.png', 'icon-512.png'];

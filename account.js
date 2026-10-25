@@ -1,5 +1,5 @@
 import { CLOUD_CONFIG } from './cloud-config.js';
-import { Cloud } from './cloud.js';
+import { Cloud, sendLinkError } from './cloud.js';
 import { Repository, validated } from './persistence.js';
 import { equal, mergeDocuments, syncDocument } from './sync.js';
 import { SEED } from './seed.js';
@@ -112,8 +112,7 @@ export function initializeAccount(onState) {
       const email = document.getElementById('login-email').value.trim();
       try { await cloud.sendLink(email, `${location.origin}${location.pathname}`); }
       catch (error) {
-        if (error.status === 429) throw new Error('הגעתם למגבלת שליחת המיילים. המתינו דקה לפני בקשת קוד נוסף.');
-        throw error;
+        throw new Error(sendLinkError(error));
       }
       message.textContent = `מייל התחברות נשלח אל ${email}. העתיקו ממנו את הקישור בלי לפתוח אותו והדביקו כאן.`;
       linkInput.focus();
