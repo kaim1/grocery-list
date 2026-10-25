@@ -313,28 +313,29 @@ function renderTaskGroups(container, completedContainer, todos, options) {
   const done = todos.filter(t => t.done && !settling.has(t.id))
     .sort((a, b) => (b.doneAt || '').localeCompare(a.doneAt || ''));
   const groups = store.groupTodos(open, today());
-  for (const [key, title] of [['today', 'היום'], ['tomorrow', 'מחר'], ['upcoming', 'בהמשך'], ['anytime', 'בכל זמן']]) {
+  for (const [key, title] of [['today', 'היום'], ['tomorrow', 'מחר'], ['upcoming', 'בהמשך'], ['anytime', 'בכל זמן'], ['someday', 'מתישהו']]) {
     if (!groups[key].length) continue;
-    const wrap = section(title);
+    let wrap;
+    if (key in groupOpen) {
+      wrap = el('details', 'category');
+      wrap.open = groupOpen[key];
+      wrap.ontoggle = () => { groupOpen[key] = wrap.open; };
+      const summary = el('summary');
+      const h = el('h2');
+      h.append(el('span', '', title), el('span', '', String(groups[key].length)));
+      summary.append(h);
+      wrap.append(summary);
+    } else {
+      wrap = section(title);
+    }
     for (const todo of groups[key]) wrap.append(todoRow(todo, key, options));
     container.append(wrap);
-  }
-  if (groups.someday.length) {
-    const details = el('details', 'category');
-    details.open = somedayOpen;
-    details.ontoggle = () => { somedayOpen = details.open; };
-    const summary = el('summary');
-    const h = el('h2');
-    h.append(el('span', '', 'מתישהו'), el('span', '', String(groups.someday.length)));
-    summary.append(h);
-    details.append(summary);
-    for (const todo of groups.someday) details.append(todoRow(todo, 'someday', options));
-    container.append(details);
   }
   for (const todo of done) completedContainer.append(todoRow(todo, 'done', options));
   return done.length;
 }
-let somedayOpen = false;
+// Which collapsible sections are open. היום and מחר always show.
+const groupOpen = { upcoming: true, anytime: true, someday: false };
 
 const upcomingReminder = todo => !todo.done && todo.remindAt && new Date(todo.remindAt) > new Date();
 
