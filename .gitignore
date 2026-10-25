@@ -1,3 +1,8 @@
 # Secrets for the send-reminders function. Never commit.
 supabase/functions/.env
 .redesign-tmp/
+
+# Local tool state and OS junk
+.DS_Store
+.wrangler/
+supabase/.temp/
