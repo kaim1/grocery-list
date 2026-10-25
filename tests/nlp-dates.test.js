@@ -155,3 +155,38 @@ test('ignores numbers and words that are not dates', () => {
     assert.equal(parseWhen(text, now), null, text);
   }
 });
+
+test('repeats', () => {
+  // Saturday 24.10.2026, 16:50.
+  const rep = text => parseWhen(text, now).repeat;
+  check('כל יום ב-8', '2026-10-25', local(2026, 10, 25, 8, 0));
+  assert.deepEqual(rep('כל יום ב-8'), { mode: 'fixed', every: 1, unit: 'day' });
+  check('כל יום ראשון', '2026-10-25', null);
+  assert.deepEqual(rep('כל יום ראשון').days, [0]);
+  check('כל יום שני וחמישי', '2026-10-26', null);
+  assert.deepEqual(rep('כל יום שני וחמישי').days, [1, 4]);
+  assert.deepEqual(rep('כל שבועיים'), { mode: 'fixed', every: 2, unit: 'week', days: [6] });
+  check('כל חודש ב-1', '2026-11-01', null);
+  assert.equal(rep('כל חודש ב-1').monthDay, 1);
+  assert.deepEqual(rep('כל 3 ימים'), { mode: 'fixed', every: 3, unit: 'day' });
+  assert.equal(rep('כל שבוע').unit, 'week');
+  assert.deepEqual(rep('כל שנה'), { mode: 'fixed', every: 1, unit: 'year', monthDay: 24, month: 9 });
+  assert.equal(rep('every day').unit, 'day');
+  check('every monday at 9', '2026-10-26', local(2026, 10, 26, 9, 0));
+  assert.deepEqual(rep('every monday at 9').days, [1]);
+  assert.equal(rep('every 2 weeks').every, 2);
+  assert.deepEqual(rep('כל יום חול').days, [0, 1, 2, 3, 4]);
+});
+
+test('a repeat with a time is found inside a title and stripped', () => {
+  const text = 'להשקות עציצים כל יום ראשון ב-8';
+  const found = parseWhen(text, now);
+  assert.equal(text.slice(found.start, found.end), 'כל יום ראשון ב-8');
+  assert.equal(stripWhen(text, found), 'להשקות עציצים');
+  assert.equal(found.when, '2026-10-25');
+  assert.equal(found.remindAt.getTime(), local(2026, 10, 25, 8, 0));
+});
+
+test('"כל" without a period stays in the title', () => {
+  for (const text of ['לקנות כל מה שצריך', 'כל הכבוד לדני', 'לבדוק כל החשבונות']) assert.equal(parseWhen(text, now), null, text);
+});

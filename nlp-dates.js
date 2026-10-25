@@ -1,6 +1,7 @@
 // nlp-dates.js — finds a date or time typed into a task title, like "מחר ב-5" or "next week".
 // Pure, so it is tested with node (tests/nlp-dates.test.js).
 import { DEFAULT_TIMES } from './reminders.js';
+import { firstDate, nextDate } from './repeat.js';
 
 const pad = n => String(n).padStart(2, '0');
 const keyOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -87,6 +88,32 @@ const EN_MONTH = `(${EN_MONTHS.flat().join('|')})`;
 
 // Each rule gives a day (a date key), a time ({h, m, sure} or {preset}), an exact moment, or a day and a time.
 const RULES = [
+  // Repeats: "כל יום", "כל יום שני וחמישי", "כל שבועיים", "כל חודש ב-1", "every monday".
+  [/כל\s+יום\s+חול|every\s+weekday/, () => ({ repeat: { mode: 'fixed', every: 1, unit: 'week', days: [0, 1, 2, 3, 4] } })],
+  [new RegExp(`כל\\s+(?:יום\\s+)?(?:${HE_DAYS.join('|')})(?:(?:\\s*,\\s*|\\s+ו)(?:יום\\s+)?(?:${HE_DAYS.join('|')}))*`), m => ({
+    repeat: { mode: 'fixed', every: 1, unit: 'week',
+      days: [...new Set([...m[0].matchAll(new RegExp(HE_DAYS.join('|'), 'g'))].map(d => HE_DAYS.indexOf(d[0])))] },
+  })],
+  [new RegExp(`every\\s+(?:${EN_DAYS.flat().join('|')})(?:(?:\\s*,\\s*|\\s+and\\s+)(?:${EN_DAYS.flat().join('|')}))*`, 'i'), m => ({
+    repeat: { mode: 'fixed', every: 1, unit: 'week',
+      days: [...new Set([...m[0].replace(/^every\s+/i, '').matchAll(/[a-z]+/gi)].map(d => enDay(d[0])).filter(d => d >= 0))] },
+  })],
+  [/כל\s+יום|every\s+day|daily/, () => ({ repeat: { mode: 'fixed', every: 1, unit: 'day' } })],
+  [/כל\s+יומיים/, () => ({ repeat: { mode: 'fixed', every: 2, unit: 'day' } })],
+  [/כל\s+שבוע|every\s+week|weekly/, () => ({ repeat: { mode: 'fixed', every: 1, unit: 'week' } })],
+  [/כל\s+שבועיים|every\s+other\s+week/, () => ({ repeat: { mode: 'fixed', every: 2, unit: 'week' } })],
+  [/כל\s+חודשיים/, () => ({ repeat: { mode: 'fixed', every: 2, unit: 'month' } })],
+  [/כל\s+(\d+)\s+(ימים|שבועות|חודשים|שנים)|every\s+(\d+)\s+(days?|weeks?|months?|years?)/, m => {
+    const every = Number(m[1] || m[3]);
+    const word = m[2] || m[4];
+    const unit = /^(ימים|day)/.test(word) ? 'day' : /^(שבועות|week)/.test(word) ? 'week' : /^(חודשים|month)/.test(word) ? 'month' : 'year';
+    return every > 0 && every < 1000 ? { repeat: { mode: 'fixed', every, unit } } : null;
+  }],
+  [/כל\s+חודש(?:\s+ב[-־]?(\d{1,2})(?![\d:.]))?|every\s+month(?:\s+on\s+the\s+(\d{1,2})(?:st|nd|rd|th)?)?|monthly/, m => {
+    const day = Number(m[1] || m[2]) || null;
+    return day > 31 ? null : { repeat: { mode: 'fixed', every: 1, unit: 'month', ...(day && { monthDay: day }) } };
+  }],
+  [/כל\s+שנה|every\s+year|yearly|annually/, () => ({ repeat: { mode: 'fixed', every: 1, unit: 'year' } })],
   [/היום|today/, () => ({ day: 0 })],
   [/מחרתיים/, () => ({ day: 2 })],
   [/מחר|tomorrow/, () => ({ day: 1 })],
@@ -143,6 +170,17 @@ const RULES = [
     }],
 ];
 
+// A repeat found in the text starts today or on its first matching day, and is anchored to that date.
+function anchorRepeat(rule, now) {
+  const today = keyOf(now);
+  if (rule.unit === 'week' && !rule.days) rule.days = [now.getDay()];
+  const key = firstDate(rule, today);
+  const [, m, d] = key.split('-').map(Number);
+  if (rule.unit === 'month' && !rule.monthDay) rule.monthDay = d;
+  if (rule.unit === 'year') { rule.monthDay = d; rule.month = m - 1; }
+  return key;
+}
+
 const WORD = '[\\p{L}\\p{N}]';
 
 function findAll(text, now) {
@@ -154,6 +192,7 @@ function findAll(text, now) {
       const value = read(m, now);
       if (!value) continue;
       if ('day' in value) { value.key = shift(now, value.day); delete value.day; }
+      if (value.repeat) value.key = anchorRepeat(value.repeat, now);
       found.push({ start: m.index, end: m.index + m[0].length, ...value });
     }
   }
@@ -189,16 +228,29 @@ export function parseWhen(text, now = new Date(), times = DEFAULT_TIMES) {
     if (a.end > b.start || /\S/.test(text.slice(a.end, b.start))) continue;
     const day = [a, b].find(f => f.key && !f.time && !f.at);
     const time = [a, b].find(f => f.time && !f.key);
-    if (day && time && day !== time) candidates.push({ start: a.start, end: b.end, key: day.key, time: time.time, parts: [a, b] });
+    if (day && time && day !== time) {
+      candidates.push({ start: a.start, end: b.end, key: day.key, repeat: day.repeat, time: time.time, parts: [a, b] });
+    }
   }
   if (!candidates.length) return null;
-  const complete = c => (c.at || (c.key && c.time) ? 2 : 1);
+  // A repeat with its time counts as most complete, then a day with a time.
+  const complete = c => (c.at || (c.key && c.time) ? 2 : 1) + (c.repeat ? 1 : 0);
   const best = candidates.reduce((x, y) => (complete(y) > complete(x) || (complete(y) === complete(x) && y.end >= x.end) ? y : x));
   const { start, end } = best;
-  if (best.at) return { start, end, when: null, remindAt: best.at };
-  if (best.key && best.time) return { start, end, when: best.key, remindAt: timeOn(best.key, withDay(best.time), times) };
-  if (best.key) return { start, end, when: best.key, remindAt: null };
-  return { start, end, when: null, remindAt: nextTime(now, best.time, times) };
+  if (best.at) return { start, end, when: null, remindAt: best.at, repeat: null };
+  const repeat = best.repeat || null;
+  if (best.key && best.time) {
+    let when = best.key;
+    let remindAt = timeOn(when, withDay(best.time), times);
+    // "כל יום ב-8" typed after 8: the first one is the next day it repeats.
+    if (repeat && remindAt <= now) {
+      when = nextDate(repeat, when, keyOf(now));
+      remindAt = timeOn(when, withDay(best.time), times);
+    }
+    return { start, end, when, remindAt, repeat };
+  }
+  if (best.key) return { start, end, when: best.key, remindAt: null, repeat };
+  return { start, end, when: null, remindAt: nextTime(now, best.time, times), repeat: null };
 }
 
 // The title without the matched phrase, and without a "ב" or "at" left hanging.

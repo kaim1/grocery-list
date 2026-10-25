@@ -4,6 +4,7 @@ import { SEED } from './seed.js';
 import { initializeAccount } from './account.js';
 import * as reminders from './reminders.js';
 import { parseWhen, stripWhen } from './nlp-dates.js';
+import * as repeat from './repeat.js';
 
 let state;
 let account;
@@ -88,9 +89,11 @@ function checkbox(label, checked, onChange) {
 // ---------- undo toast ----------
 
 let toastTimer;
-function showToast(text, undo) {
+function showToast(text, undo, sub = '') {
   const toast = document.getElementById('toast');
   document.getElementById('toast-text').textContent = text;
+  document.getElementById('toast-sub').textContent = sub;
+  document.getElementById('toast-sub').hidden = !sub;
   const button = document.getElementById('toast-undo');
   button.hidden = !undo;
   button.onclick = () => { hideToast(); undo(); saveAndRender(); };
@@ -354,6 +357,11 @@ function todoMeta(todo, group, withProject) {
     meta.append(icon('bell'));
     meta.setAttribute('aria-label', `תזכורת ${dayLabel(store.dateKey(remind))} ב-${reminders.hhmm(remind)}`);
   }
+  if (todo.repeat && !todo.done) {
+    const rep = icon('rep');
+    rep.classList.add('rep');
+    meta.prepend(rep);
+  }
   return meta.childNodes.length ? meta : null;
 }
 
@@ -364,12 +372,16 @@ function projectName(id) {
 function todoRow(todo, group, options = {}) {
   const row = el('div', `row todo-row${todo.done ? ' done' : ''}`);
   const check = checkbox(`${todo.done ? 'פתיחה מחדש' : 'סיום'}: ${todo.title}`, todo.done, done => {
-    store.setTodoDone(state, todo.id, done);
+    const next = store.setTodoDone(state, todo.id, done);
     if (done) {
       settling.add(todo.id);
       setTimeout(() => { settling.delete(todo.id); render(); }, 1200);
     }
     saveAndRender();
+    if (next) {
+      const time = next.remindAt ? `, ${reminders.hhmm(new Date(next.remindAt))}` : '';
+      showToast(`הבאה נוספה ${toDay(next.when)}`, () => store.setTodoDone(state, todo.id, false), `${next.title}${time}`);
+    }
   });
   const title = el('button', 'name', todo.title);
   title.setAttribute('aria-label', `עריכת משימה: ${todo.title}`);
@@ -406,7 +418,7 @@ function whenChoice(when) {
 
 function openTodoEditor(todo) {
   const draft = { title: todo.title, when: todo.when || 'anytime', projectId: todo.projectId || null,
-    remindAt: todo.remindAt || null };
+    remindAt: todo.remindAt || null, repeat: todo.repeat || null };
   // Every change is saved as it happens; there is no save button.
   const update = fields => {
     Object.assign(draft, fields);
@@ -448,10 +460,31 @@ function openTodoEditor(todo) {
       update(remindAt ? { remindAt, when: store.dateKey(new Date(remindAt)) } : { remindAt });
       afterReminderChosen(remindAt, main);
     });
-    rows.append(whenRow, projectRow, timeRow);
+    const repeatRow = el('button', 'setting');
+    repeatRow.append(icon('rep'), el('span', '', 'חוזר'),
+      el('span', `value${draft.repeat ? ' accent' : ''}`, draft.repeat ? repeat.describe(draft.repeat, repeatBase(draft.when)) : 'ללא'),
+      el('span', 'chev', '‹'));
+    repeatRow.onclick = () => pickRepeat(draft.repeat, repeatBase(draft.when), rule => {
+      // A repeating task needs a date; without one it starts today or on its first day.
+      update(rule && !store.DATE.test(draft.when) ? { repeat: rule, when: repeat.firstDate(rule, today()) } : { repeat: rule });
+      main();
+    });
+    rows.append(whenRow, timeRow, repeatRow, projectRow);
     const del = el('button', 'btn-danger-text', 'מחיקת המשימה');
     del.onclick = () => { commitTitle(); closeSheet(); deleteTodo(todo); };
     const footer = el('div', 'sheet-footer');
+    if (draft.repeat) {
+      const skip = el('button', 'btn-text', 'דילוג לפעם הבאה');
+      skip.onclick = () => {
+        commitTitle();
+        store.skipTodo(state, todo.id);
+        closeSheet();
+        saveAndRender();
+        const moved = state.todos.find(t => t.id === todo.id);
+        if (moved) showToast(`הועברה ${toDay(moved.when)}`);
+      };
+      footer.append(skip);
+    }
     footer.append(del);
     body.append(title, rows, footer);
   });
@@ -459,25 +492,158 @@ function openTodoEditor(todo) {
   beforeSheetCloses = commitTitle;
 }
 
+const MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+
+// "למחר", "להיום", or "ליום ג׳ 27.10".
+function toDay(key) {
+  const label = dayLabel(key);
+  return key === today() || key === store.addDays(today(), 1) ? `ל${label}` : `ליום ${label}`;
+}
+
+// The date a repeat is anchored to: the task's date, or today.
+const repeatBase = when => (store.DATE.test(when || '') ? when : today());
+
 function pickWhen(current, onPick) {
   openSheet(body => {
-    const chips = el('div', 'when-chips');
+    const quick = el('div', 'quick');
     const selected = whenChoice(current);
-    for (const [choice, label] of [['today', 'היום'], ['tomorrow', 'מחר'], ['anytime', 'בכל זמן'], ['someday', 'מתישהו']]) {
-      const b = el('button', `chip${selected === choice ? ' on' : ''}`, label);
+    for (const [choice, label, symbol] of [['today', 'היום', 'sun'], ['tomorrow', 'מחר', 'cal'], ['anytime', 'בכל זמן', 'list'], ['someday', 'מתישהו', 'box']]) {
+      const b = el('button', selected === choice ? 'on' : '');
+      b.append(icon(symbol), label);
       b.onclick = () => onPick(resolveWhen(choice));
-      chips.append(b);
+      quick.append(b);
     }
-    const date = el('label', `chip date-chip${selected === 'date' ? ' on' : ''}`);
-    const input = el('input');
-    input.type = 'date';
-    input.setAttribute('aria-label', 'תאריך');
-    if (selected === 'date') input.value = current;
-    input.onchange = () => { if (input.value) onPick(input.value); };
-    date.append(icon('cal'), el('span', '', selected === 'date' ? dayLabel(current) : 'תאריך'), input);
-    chips.append(date);
-    body.append(el('div', 'sheet-title', 'מתי?'), chips);
+    body.append(el('div', 'sheet-title', 'מתי?'), quick, calendar(store.DATE.test(current || '') ? current : null, onPick));
   });
+}
+
+// A month at a time, weeks starting on Sunday. Today is marked and the chosen day is filled.
+function calendar(selected, onPick) {
+  const wrap = el('div', 'cal');
+  const t = today();
+  let [y, m] = (selected && selected >= t ? selected : t).split('-').map(Number);
+  m -= 1;
+  const draw = () => {
+    const head = el('div', 'cal-head');
+    const prev = el('button', '', '›');
+    prev.setAttribute('aria-label', 'חודש קודם');
+    prev.onclick = () => { if (--m < 0) { m = 11; y--; } draw(); };
+    const next = el('button', '', '‹');
+    next.setAttribute('aria-label', 'חודש הבא');
+    next.onclick = () => { if (++m > 11) { m = 0; y++; } draw(); };
+    head.append(prev, el('span', '', `${MONTHS[m]} ${y}`), next);
+    const grid = el('div', 'cal-grid');
+    for (const d of ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש']) grid.append(el('span', 'dow', d));
+    for (let i = new Date(y, m, 1).getDay(); i > 0; i--) grid.append(el('span'));
+    for (let d = 1; d <= new Date(y, m + 1, 0).getDate(); d++) {
+      const key = store.dateKey(new Date(y, m, d));
+      const b = el('button', key === selected ? 'on' : key === t ? 'today' : key < t ? 'past' : '', String(d));
+      b.setAttribute('aria-label', dayLabel(key));
+      b.onclick = () => onPick(key);
+      grid.append(b);
+    }
+    wrap.replaceChildren(head, grid);
+  };
+  draw();
+  return wrap;
+}
+
+function pickRepeat(current, baseKey, onPick) {
+  openSheet(body => {
+    const list = el('div', 'opts');
+    const option = (label, detail, rule) => {
+      const on = repeat.sameRule(current, rule);
+      const b = el('button', `opt${on ? ' on' : ''}`);
+      b.append(el('span', '', label));
+      if (detail) b.append(el('span', 'detail', detail));
+      if (on) b.append(icon('tick'));
+      b.onclick = () => onPick(rule);
+      list.append(b);
+    };
+    const presets = repeat.presets(baseKey);
+    const rule = id => presets.find(p => p.id === id).rule;
+    const [, month, day] = baseKey.split('-').map(Number);
+    option('ללא חזרה', '', null);
+    option('כל יום', '', rule('day'));
+    option('כל יום חול', 'א׳–ה׳', rule('workdays'));
+    option('כל שבוע', `ביום ${WEEKDAYS[rule('week').days[0]]}`, rule('week'));
+    option('כל חודש', `ב-${day}`, rule('month'));
+    option('כל שנה', `ב-${day}.${month}`, rule('year'));
+    const custom = Boolean(current) && !presets.some(p => repeat.sameRule(p.rule, current));
+    const more = el('button', `opt${custom ? ' on' : ''}`);
+    more.append(el('span', '', 'מותאם…'), custom ? el('span', 'detail', repeat.describe(current, baseKey)) : el('span', 'chev', '‹'));
+    more.onclick = () => pickCustomRepeat(current, baseKey, onPick, () => pickRepeat(current, baseKey, onPick));
+    list.append(more);
+    body.append(el('div', 'sheet-title', 'חוזר'), list);
+  });
+}
+
+const UNIT_NAMES = { day: 'ימים', week: 'שבועות', month: 'חודשים', year: 'שנים' };
+
+function pickCustomRepeat(current, baseKey, onPick, back) {
+  const [y, mo, d] = baseKey.split('-').map(Number);
+  const dow = new Date(y, mo - 1, d).getDay();
+  const draft = { mode: current?.mode || 'fixed', every: current?.every || 1, unit: current?.unit || 'day',
+    days: current?.days?.length ? [...current.days] : [dow] };
+  const build = () => {
+    const rule = { mode: draft.mode, every: draft.every, unit: draft.unit };
+    if (draft.mode === 'fixed' && draft.unit === 'week') rule.days = draft.days.length ? [...draft.days].sort() : [dow];
+    if (draft.mode === 'fixed' && draft.unit === 'month') rule.monthDay = d;
+    if (draft.mode === 'fixed' && draft.unit === 'year') { rule.monthDay = d; rule.month = mo - 1; }
+    return rule;
+  };
+  const draw = () => openSheet(body => {
+    const title = el('div', 'sheet-title');
+    const backBtn = el('button', 'btn-text', 'חזרה');
+    backBtn.onclick = back;
+    title.append(el('span', '', 'חזרה מותאמת'), backBtn);
+    const seg = el('div', 'seg');
+    for (const [mode, label] of [['fixed', 'לפי לוח קבוע'], ['after', 'אחרי שסיימתי']]) {
+      const b = el('button', draft.mode === mode ? 'on' : '', label);
+      b.onclick = () => { draft.mode = mode; draw(); };
+      seg.append(b);
+    }
+    const stepper = el('div', 'repeat-step');
+    const minus = el('button', 'b', '−');
+    minus.setAttribute('aria-label', 'פחות');
+    minus.onclick = () => { draft.every = Math.max(1, draft.every - 1); draw(); };
+    const plus = el('button', 'b', '+');
+    plus.setAttribute('aria-label', 'יותר');
+    plus.onclick = () => { draft.every = Math.min(99, draft.every + 1); draw(); };
+    if (draft.mode === 'fixed') stepper.append(el('span', '', 'כל'));
+    stepper.append(minus, el('span', 'n', String(draft.every)), plus);
+    if (draft.mode === 'after') stepper.append(el('span', '', `${UNIT_NAMES[draft.unit]} אחרי שסימנתי`));
+    const units = el('div', 'when-chips');
+    for (const unit of ['day', 'week', 'month', 'year']) {
+      const b = el('button', `chip${draft.unit === unit ? ' on' : ''}`, UNIT_NAMES[unit]);
+      b.onclick = () => { draft.unit = unit; draw(); };
+      units.append(b);
+    }
+    body.append(title, seg, stepper, units);
+    if (draft.mode === 'fixed' && draft.unit === 'week') {
+      const days = el('div', 'wd');
+      ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'].forEach((label, i) => {
+        const b = el('button', draft.days.includes(i) ? 'on' : '', label);
+        b.setAttribute('aria-label', `יום ${WEEKDAYS[i]}`);
+        b.onclick = () => {
+          draft.days = draft.days.includes(i) ? draft.days.filter(x => x !== i) : [...draft.days, i];
+          draw();
+        };
+        days.append(b);
+      });
+      body.append(days);
+    }
+    const rule = build();
+    if (draft.mode === 'fixed') body.append(el('div', 'repeat-summary', repeat.describe(rule, baseKey)));
+    else {
+      body.append(el('div', 'repeat-summary', `הבאה תופיע ${repeat.describe(rule, baseKey).replace(' אחרי שסיימתי', '')} אחרי שתסמן את זו`),
+        el('p', 'repeat-hint', 'טוב לדברים כמו השקיה או החלפת מצעים, שלא משנה באיזה יום בדיוק'));
+    }
+    const save = el('button', 'btn-primary', 'שמירה');
+    save.onclick = () => onPick(build());
+    body.append(save);
+  });
+  draw();
 }
 
 // ---------- task composer ----------
@@ -488,10 +654,13 @@ const composer = {
   defaultProject: null,
   remindAt: null,
   // What the chips were set to by hand; a date typed in the title fills in the rest.
+  repeat: null,
   baseWhen: 'anytime',
   baseRemindAt: null,
+  baseRepeat: null,
   manualWhen: false,
   manualTime: false,
+  manualRepeat: false,
   parsed: null,
   ignored: null,
   open(projectId = null) {
@@ -508,7 +677,8 @@ const composer = {
   reset() {
     this.baseWhen = 'anytime';
     this.baseRemindAt = null;
-    this.manualWhen = this.manualTime = false;
+    this.baseRepeat = null;
+    this.manualWhen = this.manualTime = this.manualRepeat = false;
     this.parsed = this.ignored = null;
     this.apply();
   },
@@ -535,6 +705,15 @@ const composer = {
     this.remindAt = this.manualTime || !p?.remindAt ? this.baseRemindAt : p.remindAt.toISOString();
     const parsedWhen = p && (p.when || (p.remindAt ? store.dateKey(p.remindAt) : null));
     this.when = this.manualWhen || !parsedWhen ? this.baseWhen : parsedWhen;
+    this.repeat = this.manualRepeat || !p?.repeat ? this.baseRepeat : p.repeat;
+    // A repeating task needs a date; without one it starts today or on its first day.
+    if (this.repeat && !store.DATE.test(this.when)) this.when = repeat.firstDate(this.repeat, today());
+  },
+  setRepeat(rule) {
+    this.baseRepeat = rule;
+    this.manualRepeat = true;
+    this.apply();
+    this.render();
   },
   setWhen(when) {
     this.baseWhen = when;
@@ -551,31 +730,35 @@ const composer = {
   },
   render() {
     const choice = whenChoice(this.when);
-    for (const chip of document.querySelectorAll('#composer-when .chip')) {
-      chip.classList.toggle('soft-on', chip.dataset.when === choice);
-    }
-    document.getElementById('composer-date-label').textContent = choice === 'date' ? dayLabel(this.when) : 'תאריך';
+    const dateLabel = choice === 'anytime' ? 'תאריך' : choice === 'someday' ? 'מתישהו' : dayLabel(this.when);
+    document.getElementById('composer-date-label').textContent = dateLabel;
+    document.getElementById('composer-date').classList.toggle('soft-on', choice !== 'anytime');
     const time = this.remindAt && reminders.hhmm(new Date(this.remindAt));
     document.getElementById('composer-time-label').textContent = time || 'שעה';
     document.getElementById('composer-time').classList.toggle('soft-on', Boolean(time));
+    document.getElementById('composer-repeat-label').textContent = repeat.shortLabel(this.repeat);
+    document.getElementById('composer-repeat').classList.toggle('soft-on', Boolean(this.repeat));
     const project = projectName(this.projectId);
     document.getElementById('composer-project-label').textContent = project || 'פרויקט';
     document.getElementById('composer-project').classList.toggle('soft-on', Boolean(project));
     const p = this.parsed;
     document.getElementById('composer-parsed').hidden = !p;
     if (p) {
-      document.getElementById('composer-parsed-label').textContent =
-        p.remindAt ? reminderLabel(p.remindAt.toISOString()) : whenLabel(p.when);
+      const at = p.remindAt && reminders.hhmm(p.remindAt);
+      document.getElementById('composer-parsed-label').textContent = p.repeat
+        ? [repeat.describe(p.repeat, p.when), at].filter(Boolean).join(', ')
+        : p.remindAt ? reminderLabel(p.remindAt.toISOString()) : whenLabel(p.when);
     }
   },
   submit() {
     const input = document.getElementById('todo-title');
     const p = this.parsed;
     // The typed date becomes the task's date, so it leaves the title unless both chips overrode it.
-    const used = p && !(this.manualWhen && this.manualTime);
+    const used = p && !(this.manualWhen && this.manualTime && this.manualRepeat);
     const title = (used && stripWhen(input.value, p)) || input.value;
     const fields = { when: this.when, projectId: this.projectId };
     if (this.remindAt) fields.remindAt = this.remindAt;
+    if (this.repeat) fields.repeat = this.repeat;
     if (!store.addTodo(state, title, fields)) return;
     const parsedReminder = used && !this.manualTime ? this.remindAt : null;
     input.value = '';
@@ -587,17 +770,14 @@ const composer = {
   },
 };
 
-for (const chip of document.querySelectorAll('#composer-when button.chip')) {
-  // Keep the keyboard open while choosing.
-  chip.addEventListener('pointerdown', e => e.preventDefault());
-  chip.onclick = () => {
-    const when = resolveWhen(chip.dataset.when);
-    composer.setWhen(composer.when === when ? 'anytime' : when);
-  };
-}
-document.getElementById('composer-date').onchange = e => {
-  if (e.target.value) composer.setWhen(e.target.value);
-  document.getElementById('todo-title').focus();
+// Keep the keyboard open while choosing.
+for (const chip of document.querySelectorAll('#composer-extra .chip')) chip.addEventListener('pointerdown', e => e.preventDefault());
+const backToTitle = () => { closeSheet(); document.getElementById('todo-title').focus(); };
+document.getElementById('composer-date').onclick = () => {
+  pickWhen(composer.when, when => { composer.setWhen(when); backToTitle(); });
+};
+document.getElementById('composer-repeat').onclick = () => {
+  pickRepeat(composer.repeat, repeatBase(composer.when), rule => { composer.setRepeat(rule); backToTitle(); });
 };
 document.getElementById('todo-title').addEventListener('input', () => composer.parse());
 const parsedClear = document.getElementById('composer-parsed-clear');

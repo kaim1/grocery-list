@@ -1,4 +1,6 @@
 // store.js — pure state logic. No DOM access allowed in this file.
+import { nextDate, shiftReminder } from './repeat.js';
+
 export function newId() { return crypto.randomUUID(); }
 
 export function createState(seed) {
@@ -148,11 +150,38 @@ export function renameTodo(state, id, title) {
   if (todo && title.trim()) todo.title = title.trim();
 }
 
-export function setTodoDone(state, id, done) {
+// Checking a repeating task adds its next time and returns it. Reopening it takes that one away again,
+// so a series only ever has one open task.
+export function setTodoDone(state, id, done, today = dateKey(new Date())) {
   const todo = state.todos.find(t => t.id === id);
-  if (!todo) return;
+  if (!todo) return null;
   todo.done = Boolean(done);
   todo.doneAt = todo.done ? new Date().toISOString() : null;
+  if (!todo.done && todo.nextId) {
+    const next = state.todos.find(t => t.id === todo.nextId);
+    if (next && !next.done) deleteTodo(state, next.id);
+    todo.nextId = null;
+  }
+  if (!todo.done || !todo.repeat || todo.nextId) return null;
+  const base = DATE.test(todo.when || '') ? todo.when : today;
+  const when = nextDate(todo.repeat, base, today);
+  const next = { id: newId(), title: todo.title, done: false, when, repeat: todo.repeat };
+  if (todo.projectId) next.projectId = todo.projectId;
+  if (todo.remindAt) next.remindAt = shiftReminder(todo.remindAt, base, when);
+  state.todos.push(next);
+  todo.nextId = next.id;
+  return next;
+}
+
+// Moves a repeating task to its next time without checking it.
+export function skipTodo(state, id, today = dateKey(new Date())) {
+  const todo = state.todos.find(t => t.id === id);
+  if (!todo?.repeat) return;
+  const base = DATE.test(todo.when || '') ? todo.when : today;
+  const when = nextDate(todo.repeat, base, today);
+  todo.remindAt = shiftReminder(todo.remindAt, base, when) || undefined;
+  if (!todo.remindAt) delete todo.remindAt;
+  todo.when = when;
 }
 
 export function deleteTodo(state, id) {
