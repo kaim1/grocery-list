@@ -75,15 +75,22 @@ test('tasks without a time are "anytime", and old tasks gain it on load', () => 
   }
 });
 
-test('tasks group into today (with overdue), tomorrow, upcoming, anytime and someday', () => {
+test('tasks group into today (with overdue), tomorrow, this week, this month, later and someday', () => {
   const t = (id, when) => ({ id, title: id, done: false, when });
-  const groups = store.groupTodos([
+  // 2026-10-23 is a Friday, so the week ends tomorrow; 2026-10-27 is a Tuesday.
+  const ids = groups => Object.fromEntries(Object.entries(groups).map(([k, v]) => [k, v.map(x => x.id)]));
+  const todos = [
     t('late', '2026-10-21'), t('now', '2026-10-23'), t('tom', '2026-10-24'), t('far', '2026-11-02'),
     t('soon', '2026-10-26'), t('any', 'anytime'), t('some', 'someday'), { id: 'old', title: 'old', done: false },
-  ], '2026-10-23');
-  assert.deepEqual(Object.fromEntries(Object.entries(groups).map(([k, v]) => [k, v.map(x => x.id)])), {
-    today: ['late', 'now'], tomorrow: ['tom'], upcoming: ['soon', 'far'], anytime: ['any', 'old'], someday: ['some'],
+  ];
+  assert.deepEqual(ids(store.groupTodos(todos, '2026-10-23')), {
+    today: ['late', 'now'], tomorrow: ['tom'], week: [], month: ['soon'], later: ['far'], someday: ['any', 'some', 'old'],
   });
+  assert.deepEqual(ids(store.groupTodos([t('thu', '2026-10-29'), t('sat', '2026-10-31'), t('nov', '2026-11-01')], '2026-10-27')), {
+    today: [], tomorrow: [], week: ['thu', 'sat'], month: [], later: ['nov'], someday: [],
+  });
+  assert.equal(store.weekEnd('2026-10-25'), '2026-10-31');
+  assert.equal(store.monthEnd('2026-02-10'), '2026-02-28');
   assert.equal(store.addDays('2026-12-31', 1), '2027-01-01');
   assert.equal(store.addDays('2026-03-01', -1), '2026-02-28');
 });

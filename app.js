@@ -305,10 +305,11 @@ function updateMiniHead() {
 }
 addEventListener('scroll', updateMiniHead, { passive: true });
 
-const VIEWS = { today: 'היום', soon: 'בקרוב', anytime: 'בכל זמן', someday: 'מתישהו' };
+const VIEWS = { today: 'היום', tomorrow: 'מחר', week: 'השבוע', month: 'החודש', later: 'בהמשך', someday: 'מתישהו' };
 // The tasks screen lists only tasks outside projects; a project's tasks live on its own page.
 const looseTodos = () => state.todos.filter(t => !t.projectId);
-const VIEW_EMPTY = { today: 'אין משימות להיום', soon: 'אין משימות בימים הקרובים', anytime: 'אין משימות בלי תאריך', someday: 'אין משימות למתישהו' };
+const VIEW_EMPTY = { today: 'אין משימות להיום', tomorrow: 'אין משימות למחר', week: 'אין עוד משימות השבוע',
+  month: 'אין עוד משימות החודש', later: 'אין משימות אחרי החודש', someday: 'אין משימות בלי תאריך' };
 const longToday = () => new Date().toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
 
 function renderTodos() {
@@ -327,7 +328,7 @@ function renderTodos() {
   document.getElementById('todos-completed-count').textContent = done;
 }
 
-// On the desktop each view lists one kind of "when"; בקרוב has a section per day.
+// On the desktop each view lists one kind of "when"; השבוע has a section per day.
 function renderTaskView(view) {
   const container = document.getElementById('todos-container');
   const completedContainer = document.getElementById('todos-completed-container');
@@ -335,7 +336,7 @@ function renderTaskView(view) {
   completedContainer.replaceChildren();
   const shown = renderViewTodos(container, looseTodos(), view, { showProject: true });
   document.getElementById('todos-sub').textContent = view === 'today' ? longToday()
-    : shown ? count(shown, view === 'soon' ? 'משימה אחת בימים הקרובים' : 'משימה אחת', view === 'soon' ? 'משימות בימים הקרובים' : 'משימות') : '';
+    : shown ? count(shown, 'משימה אחת', 'משימות') : '';
   const empty = document.getElementById('todos-empty');
   empty.textContent = VIEW_EMPTY[view];
   empty.hidden = shown > 0;
@@ -358,10 +359,9 @@ function renderViewTodos(container, todos, view, options) {
     container.append(wrap);
     shown += todos.length;
   };
-  if (view === 'soon') {
-    add('מחר', groups.tomorrow, 'day');
+  if (view === 'week') {
     const byDay = new Map();
-    for (const todo of groups.upcoming) byDay.set(todo.when, [...byDay.get(todo.when) || [], todo]);
+    for (const todo of groups.week) byDay.set(todo.when, [...byDay.get(todo.when) || [], todo]);
     for (const [key, todos] of [...byDay].sort(([a], [b]) => a.localeCompare(b))) add(fullDayLabel(key), todos, 'day');
   } else {
     add(null, groups[view], view);
@@ -384,7 +384,7 @@ function renderTaskGroups(container, completedContainer, todos, options) {
   const done = todos.filter(t => t.done && !settling.has(t.id))
     .sort((a, b) => (b.doneAt || '').localeCompare(a.doneAt || ''));
   const groups = store.groupTodos(open, today());
-  for (const [key, title] of [['today', 'היום'], ['tomorrow', 'מחר'], ['upcoming', 'בהמשך'], ['anytime', 'בכל זמן'], ['someday', 'מתישהו']]) {
+  for (const [key, title] of Object.entries(VIEWS)) {
     if (!groups[key].length) continue;
     let wrap;
     if (key in groupOpen) {
@@ -406,7 +406,7 @@ function renderTaskGroups(container, completedContainer, todos, options) {
   return done.length;
 }
 // Which collapsible sections are open. היום and מחר always show.
-const groupOpen = { upcoming: true, anytime: true, someday: false };
+const groupOpen = { week: true, month: true, later: true, someday: true };
 
 const upcomingReminder = todo => !todo.done && todo.remindAt && new Date(todo.remindAt) > new Date();
 
@@ -416,7 +416,7 @@ function todoMeta(todo, group, withProject) {
   if (group === 'today' && todo.when < today()) {
     meta.classList.add('late');
     meta.textContent = dayLabel(todo.when);
-  } else if (group === 'upcoming') {
+  } else if (['week', 'month', 'later'].includes(group)) {
     meta.textContent = dayLabel(todo.when);
   }
   if (upcomingReminder(todo)) {
@@ -970,7 +970,7 @@ document.querySelector('#composer-form .addbtn').addEventListener('pointerdown',
 document.getElementById('composer-form').onsubmit = e => { e.preventDefault(); composer.submit(); };
 document.getElementById('composer-dim').onclick = () => composer.close();
 // On the desktop a new task starts in the view it was added from.
-const viewWhen = () => ({ today: today(), soon: store.addDays(today(), 1), anytime: 'anytime', someday: 'someday' })[taskView];
+const viewWhen = () => viewFirstDay(taskView);
 document.getElementById('btn-new-todo').onclick = () => composer.open(null, isDesk() ? viewWhen() : 'anytime');
 document.getElementById('todo-title').addEventListener('keydown', e => { if (e.key === 'Escape') composer.close(); });
 document.getElementById('composer-time').onclick = () => {
@@ -1710,7 +1710,7 @@ if (window.visualViewport) {
 
 // ---------- desktop: sidebar ----------
 
-const VIEW_ICONS = { today: 'sun', soon: 'cal', anytime: 'list', someday: 'box' };
+const VIEW_ICONS = { today: 'sun', tomorrow: 'moon', week: 'cal', month: 'list', later: 'clock', someday: 'box' };
 
 function showTaskView(view) {
   taskView = view;
@@ -1729,8 +1729,6 @@ function renderSidebar() {
   const nav = document.getElementById('sidebar');
   if (!isDesk() || !state) return nav.replaceChildren();
   const groups = store.groupTodos(looseTodos().filter(t => !t.done), today());
-  const counts = { today: groups.today.length, soon: groups.tomorrow.length + groups.upcoming.length,
-    anytime: groups.anytime.length, someday: groups.someday.length };
   const item = (label, symbol, n, on, onClick, drop) => {
     const b = el('button', `side-item${on ? ' on' : ''}`);
     b.append(icon(symbol), el('span', 'label', label), el('span', 'n', n ? String(n) : ''));
@@ -1741,7 +1739,7 @@ function renderSidebar() {
   };
   const items = [];
   for (const [view, label] of Object.entries(VIEWS)) {
-    items.push(item(label, VIEW_ICONS[view], counts[view], screen === 'todos' && taskView === view, () => showTaskView(view),
+    items.push(item(label, VIEW_ICONS[view], groups[view].length, screen === 'todos' && taskView === view, () => showTaskView(view),
       todo => ({ when: viewWhenFor(view, todo) })));
   }
   items.push(el('div', 'side-sep'));
@@ -1763,10 +1761,16 @@ function renderSidebar() {
   nav.replaceChildren(...items);
 }
 
-// Dropping a task on היום or מחר moves it there; a task keeps its own date when dropped on בקרוב if it already has a later one.
+// The "when" a new task gets in each view.
+function viewFirstDay(view) {
+  return ({ today: today(), tomorrow: store.addDays(today(), 1), week: store.addDays(today(), 2),
+    month: store.addDays(store.weekEnd(today()), 1), later: store.addDays(store.monthEnd(today()), 1), someday: 'anytime' })[view];
+}
+
+// Dropping a task on היום or מחר moves it there; on the other views it keeps its own date if that already fits.
 function viewWhenFor(view, todo) {
-  if (view === 'soon') return todo.when > today() && store.DATE.test(todo.when) ? todo.when : store.addDays(today(), 1);
-  return ({ today: today(), anytime: 'anytime', someday: 'someday' })[view];
+  if (view !== 'today' && view !== 'tomorrow' && store.groupTodos([todo], today())[view].length) return todo.when;
+  return viewFirstDay(view);
 }
 
 function dropTarget(target, fields) {
@@ -1874,7 +1878,7 @@ const SHORTCUTS = [
   ['D', 'בחירת תאריך'],
   ['⌫', 'מחיקה'],
   ['⌘Z', 'ביטול הפעולה האחרונה'],
-  ['1–5', 'היום, בקרוב, בכל זמן, מתישהו, קניות'],
+  ['1–7', 'היום, מחר, השבוע, החודש, בהמשך, מתישהו, קניות'],
   ['Esc', 'סגירה'],
 ];
 
@@ -1931,11 +1935,11 @@ document.addEventListener('keydown', e => {
   const selected = state?.todos.find(t => t.id === selectedId && visibleRows().some(r => r.dataset.id === t.id));
   const row = selected && document.querySelector(`.screen:not([hidden]) .todo-row[data-id="${selected.id}"]`);
   const act = fn => { e.preventDefault(); fn(); };
-  const views = ['today', 'soon', 'anytime', 'someday'];
+  const views = Object.keys(VIEWS);
   if (e.key === '?') return act(openShortcuts);
-  if (/^Digit[1-5]$/.test(e.code)) {
+  if (/^Digit[1-7]$/.test(e.code)) {
     const n = Number(e.code.slice(5));
-    return act(() => (n === 5 ? showScreen('list') : showTaskView(views[n - 1])));
+    return act(() => (n === 7 ? showScreen('list') : showTaskView(views[n - 1])));
   }
   if (e.code === 'KeyN' || (e.code === 'Slash' && screen === 'list')) {
     if (screen === 'list') return act(() => openCatalog(false));

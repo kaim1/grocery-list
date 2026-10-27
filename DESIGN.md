@@ -24,7 +24,8 @@ implemented product.
 - Each list screen has one floating white pill above the tab bar (add product,
   new task, new project). The catalog is not a tab: the shopping pill opens it as
   the add/search screen.
-- Tasks are grouped by when: היום, מחר, בהמשך, בכל זמן, and a collapsed מתישהו.
+- Tasks are grouped by when: היום, מחר, השבוע (to Saturday), החודש, בהמשך (after this
+  month) and מתישהו, which holds every undated task (בכל זמן and מתישהו alike).
   A row shows the project name and a bell when both exist, otherwise the time
   and bell; the bell sits on the left.
 - The add-task composer is one chip row: תאריך, שעה, חוזר, פרויקט, then the
@@ -47,11 +48,11 @@ implemented product.
 
 ## Desktop (approved 2026-10-25)
 
-- From 760px wide the bottom tabs become a right sidebar: היום, בקרוב, בכל זמן,
-  מתישהו (separate views, desktop opens on היום), then קניות, the active projects
+- From 760px wide the bottom tabs become a right sidebar: היום, מחר, השבוע, החודש,
+  בהמשך, מתישהו (separate views, desktop opens on היום; השבוע has a section per day), then קניות, the active projects
   with open counts, and הגדרות at the bottom. The phone keeps one grouped משימות screen.
 - Tasks in a project show only on that project's page. On the desktop the page has chips
-  הכל, היום, בקרוב, בכל זמן, מתישהו to narrow it to the same views.
+  הכל plus the same views to narrow it.
 - The list stays in a centred ~640px reading column. Clicking a task opens a
   details pane on the left (372px; it overlays the list under 1100px) with the
   title, notes, מתי, שעה, חוזר, פרויקט. Edits save as they happen; Esc closes.
@@ -59,7 +60,7 @@ implemented product.
   The composer opens in place without dimming and starts in the current view's "when".
 - Right-click menu on a task; drag a task onto a sidebar view or project. Swipe stays touch-only.
 - Shortcuts use physical keys so they work in the Hebrew layout: N, ↑↓, Enter, Space,
-  T, M, D, Backspace, ⌘Z, 1–5, Esc, ? (list in the app).
+  T, M, D, Backspace, ⌘Z, 1–7, Esc, ? (list in the app).
 - The shopping catalog opens as the left column; Enter adds the first match.
 - Tasks have free-text notes (pane and phone edit sheet); a small page icon marks them in the row.
 

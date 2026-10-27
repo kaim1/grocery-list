@@ -130,20 +130,33 @@ export function updateTodo(state, id, fields) {
 }
 
 // Sections of the tasks screen. Overdue dated tasks join today.
+// The last day of the calendar week (Saturday) and of the month that `today` is in.
+export function weekEnd(today) {
+  const [y, m, d] = today.split('-').map(Number);
+  return addDays(today, 6 - new Date(y, m - 1, d).getDay());
+}
+export function monthEnd(today) {
+  const [y, m] = today.split('-').map(Number);
+  return dateKey(new Date(y, m, 0));
+}
+
+// Undated tasks, whether set to בכל זמן or מתישהו, all go to someday.
 export function groupTodos(todos, today) {
   const tomorrow = addDays(today, 1);
-  const groups = { today: [], tomorrow: [], upcoming: [], anytime: [], someday: [] };
+  const week = weekEnd(today);
+  const month = monthEnd(today);
+  const groups = { today: [], tomorrow: [], week: [], month: [], later: [], someday: [] };
   for (const todo of todos) {
     const when = todo.when || 'anytime';
-    if (when === 'someday') groups.someday.push(todo);
-    else if (!DATE.test(when)) groups.anytime.push(todo);
+    if (!DATE.test(when)) groups.someday.push(todo);
     else if (when <= today) groups.today.push(todo);
     else if (when === tomorrow) groups.tomorrow.push(todo);
-    else groups.upcoming.push(todo);
+    else if (when <= week) groups.week.push(todo);
+    else if (when <= month) groups.month.push(todo);
+    else groups.later.push(todo);
   }
   const byDate = (a, b) => a.when.localeCompare(b.when);
-  groups.today.sort(byDate);
-  groups.upcoming.sort(byDate);
+  for (const key of ['today', 'week', 'month', 'later']) groups[key].sort(byDate);
   return groups;
 }
 
