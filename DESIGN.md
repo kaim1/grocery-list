@@ -25,14 +25,14 @@ implemented product.
   new task, new project). The catalog is not a tab: the shopping pill opens it as
   the add/search screen.
 - Tasks are grouped by when: היום, מחר, השבוע (to Saturday), החודש, בהמשך (after this
-  month) and מתישהו, which holds every undated task (בכל זמן and מתישהו alike).
+  month) and מתישהו, which holds every undated task.
   A row shows the project name and a bell when both exist, otherwise the time
   and bell; the bell sits on the left.
 - The add-task composer is one chip row: תאריך, שעה, חוזר, פרויקט, then the
   round add button. Chips are grey until set and then show the value. A date,
   time or repeat typed in the title fills them, with a dismissable chip under
   the field; a manual pick wins. The date chip opens the "מתי?" sheet: היום,
-  מחר, בכל זמן, מתישהו, then a month calendar (weeks start on Sunday).
+  מחר, מתישהו, then a month calendar (weeks start on Sunday).
 - Repeating tasks show a small ↻ in the row meta. The repeat sheet offers the
   common rules plus a custom one (on a calendar, or N days after checking).
   Checking one adds the next at once with an undo toast; a series has one open

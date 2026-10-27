@@ -285,8 +285,7 @@ function dayLabel(key) {
 }
 
 function whenLabel(when) {
-  if (when === 'someday') return 'מתישהו';
-  if (!store.DATE.test(when || '')) return 'בכל זמן';
+  if (!store.DATE.test(when || '')) return 'מתישהו';
   return when < today() ? `${dayLabel(when)} (עבר)` : dayLabel(when);
 }
 
@@ -687,8 +686,9 @@ const repeatBase = when => (store.DATE.test(when || '') ? when : today());
 function pickWhen(current, onPick) {
   openSheet(body => {
     const quick = el('div', 'quick');
-    const selected = whenChoice(current);
-    for (const [choice, label, symbol] of [['today', 'היום', 'sun'], ['tomorrow', 'מחר', 'cal'], ['anytime', 'בכל זמן', 'list'], ['someday', 'מתישהו', 'box']]) {
+    // Undated tasks all show under מתישהו, so there is no separate בכל זמן.
+    const selected = whenChoice(current) === 'anytime' ? 'someday' : whenChoice(current);
+    for (const [choice, label, symbol] of [['today', 'היום', 'sun'], ['tomorrow', 'מחר', 'cal'], ['someday', 'מתישהו', 'box']]) {
       const b = el('button', selected === choice ? 'on' : '');
       b.append(icon(symbol), label);
       b.onclick = () => onPick(resolveWhen(choice));
@@ -1821,7 +1821,7 @@ function openContextMenu(todo, row, x, y) {
     item('sun', 'היום', 'T', a.today, { checked: choice === 'today' }),
     item('cal', 'מחר', 'M', a.tomorrow, { checked: choice === 'tomorrow' }),
     item('cal', 'תאריך…', 'D', a.date),
-    item('box', 'מתישהו', '', a.someday, { checked: choice === 'someday' }),
+    item('box', 'מתישהו', '', a.someday, { checked: choice === 'someday' || choice === 'anytime' }),
     el('hr'),
     item('clock', 'שעה ותזכורת…', '', a.reminder),
     item('rep', 'חוזר…', '', a.repeat),
