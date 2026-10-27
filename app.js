@@ -306,6 +306,8 @@ function updateMiniHead() {
 addEventListener('scroll', updateMiniHead, { passive: true });
 
 const VIEWS = { today: 'היום', soon: 'בקרוב', anytime: 'בכל זמן', someday: 'מתישהו' };
+// The tasks screen lists only tasks outside projects; a project's tasks live on its own page.
+const looseTodos = () => state.todos.filter(t => !t.projectId);
 const longToday = () => new Date().toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
 
 function renderTodos() {
@@ -318,8 +320,8 @@ function renderTodos() {
   const done = renderTaskGroups(
     document.getElementById('todos-container'),
     document.getElementById('todos-completed-container'),
-    state.todos, { showProject: true });
-  document.getElementById('todos-empty').hidden = state.todos.some(t => !t.done || settling.has(t.id));
+    looseTodos(), { showProject: true });
+  document.getElementById('todos-empty').hidden = looseTodos().some(t => !t.done || settling.has(t.id));
   document.getElementById('todos-completed').hidden = done === 0;
   document.getElementById('todos-completed-count').textContent = done;
 }
@@ -330,7 +332,7 @@ function renderTaskView(view) {
   const completedContainer = document.getElementById('todos-completed-container');
   container.replaceChildren();
   completedContainer.replaceChildren();
-  const groups = store.groupTodos(state.todos.filter(t => !t.done || settling.has(t.id)), today());
+  const groups = store.groupTodos(looseTodos().filter(t => !t.done || settling.has(t.id)), today());
   let shown = 0;
   const add = (title, todos, group) => {
     if (!todos.length) return;
@@ -353,7 +355,7 @@ function renderTaskView(view) {
   empty.textContent = { today: 'אין משימות להיום', soon: 'אין משימות בימים הקרובים', anytime: 'אין משימות בלי תאריך', someday: 'אין משימות למתישהו' }[view];
   empty.hidden = shown > 0;
   // Only היום lists finished tasks, and only those finished today.
-  const done = view === 'today' ? state.todos.filter(t => t.done && !settling.has(t.id) && t.doneAt && store.dateKey(new Date(t.doneAt)) === today())
+  const done = view === 'today' ? looseTodos().filter(t => t.done && !settling.has(t.id) && t.doneAt && store.dateKey(new Date(t.doneAt)) === today())
     .sort((a, b) => b.doneAt.localeCompare(a.doneAt)) : [];
   for (const todo of done) completedContainer.append(todoRow(todo, 'done', { showProject: true }));
   document.getElementById('todos-completed').hidden = done.length === 0;
@@ -1697,7 +1699,7 @@ function showProject(id) {
 function renderSidebar() {
   const nav = document.getElementById('sidebar');
   if (!isDesk() || !state) return nav.replaceChildren();
-  const groups = store.groupTodos(state.todos.filter(t => !t.done), today());
+  const groups = store.groupTodos(looseTodos().filter(t => !t.done), today());
   const counts = { today: groups.today.length, soon: groups.tomorrow.length + groups.upcoming.length,
     anytime: groups.anytime.length, someday: groups.someday.length };
   const item = (label, symbol, n, on, onClick, drop) => {
