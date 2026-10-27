@@ -50,6 +50,8 @@ implemented product.
 - From 760px wide the bottom tabs become a right sidebar: היום, בקרוב, בכל זמן,
   מתישהו (separate views, desktop opens on היום), then קניות, the active projects
   with open counts, and הגדרות at the bottom. The phone keeps one grouped משימות screen.
+- Tasks in a project show only on that project's page. On the desktop the page has chips
+  הכל, היום, בקרוב, בכל זמן, מתישהו to narrow it to the same views.
 - The list stays in a centred ~640px reading column. Clicking a task opens a
   details pane on the left (372px; it overlays the list under 1100px) with the
   title, notes, מתי, שעה, חוזר, פרויקט. Edits save as they happen; Esc closes.

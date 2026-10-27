@@ -308,6 +308,7 @@ addEventListener('scroll', updateMiniHead, { passive: true });
 const VIEWS = { today: 'היום', soon: 'בקרוב', anytime: 'בכל זמן', someday: 'מתישהו' };
 // The tasks screen lists only tasks outside projects; a project's tasks live on its own page.
 const looseTodos = () => state.todos.filter(t => !t.projectId);
+const VIEW_EMPTY = { today: 'אין משימות להיום', soon: 'אין משימות בימים הקרובים', anytime: 'אין משימות בלי תאריך', someday: 'אין משימות למתישהו' };
 const longToday = () => new Date().toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
 
 function renderTodos() {
@@ -332,12 +333,28 @@ function renderTaskView(view) {
   const completedContainer = document.getElementById('todos-completed-container');
   container.replaceChildren();
   completedContainer.replaceChildren();
-  const groups = store.groupTodos(looseTodos().filter(t => !t.done || settling.has(t.id)), today());
+  const shown = renderViewTodos(container, looseTodos(), view, { showProject: true });
+  document.getElementById('todos-sub').textContent = view === 'today' ? longToday()
+    : shown ? count(shown, view === 'soon' ? 'משימה אחת בימים הקרובים' : 'משימה אחת', view === 'soon' ? 'משימות בימים הקרובים' : 'משימות') : '';
+  const empty = document.getElementById('todos-empty');
+  empty.textContent = VIEW_EMPTY[view];
+  empty.hidden = shown > 0;
+  // Only היום lists finished tasks, and only those finished today.
+  const done = view === 'today' ? looseTodos().filter(t => t.done && !settling.has(t.id) && t.doneAt && store.dateKey(new Date(t.doneAt)) === today())
+    .sort((a, b) => b.doneAt.localeCompare(a.doneAt)) : [];
+  for (const todo of done) completedContainer.append(todoRow(todo, 'done', { showProject: true }));
+  document.getElementById('todos-completed').hidden = done.length === 0;
+  document.getElementById('todos-completed-count').textContent = done.length;
+}
+
+// Appends the open tasks of one desktop view to `container` and returns how many there were.
+function renderViewTodos(container, todos, view, options) {
+  const groups = store.groupTodos(todos.filter(t => !t.done || settling.has(t.id)), today());
   let shown = 0;
   const add = (title, todos, group) => {
     if (!todos.length) return;
     const wrap = title ? section(title) : el('div', 'category');
-    for (const todo of todos) wrap.append(todoRow(todo, group, { showProject: true }));
+    for (const todo of todos) wrap.append(todoRow(todo, group, options));
     container.append(wrap);
     shown += todos.length;
   };
@@ -349,17 +366,7 @@ function renderTaskView(view) {
   } else {
     add(null, groups[view], view);
   }
-  document.getElementById('todos-sub').textContent = view === 'today' ? longToday()
-    : shown ? count(shown, view === 'soon' ? 'משימה אחת בימים הקרובים' : 'משימה אחת', view === 'soon' ? 'משימות בימים הקרובים' : 'משימות') : '';
-  const empty = document.getElementById('todos-empty');
-  empty.textContent = { today: 'אין משימות להיום', soon: 'אין משימות בימים הקרובים', anytime: 'אין משימות בלי תאריך', someday: 'אין משימות למתישהו' }[view];
-  empty.hidden = shown > 0;
-  // Only היום lists finished tasks, and only those finished today.
-  const done = view === 'today' ? looseTodos().filter(t => t.done && !settling.has(t.id) && t.doneAt && store.dateKey(new Date(t.doneAt)) === today())
-    .sort((a, b) => b.doneAt.localeCompare(a.doneAt)) : [];
-  for (const todo of done) completedContainer.append(todoRow(todo, 'done', { showProject: true }));
-  document.getElementById('todos-completed').hidden = done.length === 0;
-  document.getElementById('todos-completed-count').textContent = done.length;
+  return shown;
 }
 
 // "מחר", or "יום שלישי · 27.10".
@@ -1201,6 +1208,8 @@ navigator.serviceWorker?.addEventListener('message', e => {
 // ---------- projects ----------
 
 let currentProject = null;
+// The view chip picked inside a project on the desktop.
+let projectView = 'all';
 let projectsDoneOpen = false;
 
 function renderProjects() {
@@ -1253,8 +1262,27 @@ function renderProjects() {
   const sub = el('div', 'project-sub', `${openCount} פתוחות · ${todos.length - openCount} הושלמו`);
   const groups = el('div');
   const completedList = el('div');
-  const doneCount = renderTaskGroups(groups, completedList, todos, { showProject: false });
-  container.append(back, title, sub, groups);
+  let doneCount = renderTaskGroups(groups, completedList, todos, { showProject: false });
+  container.append(back, title, sub);
+  // On the desktop a project can be narrowed to the same views as the tasks screen.
+  const view = isDesk() ? projectView : 'all';
+  if (isDesk() && todos.length) {
+    const chips = el('div', 'chips project-views');
+    for (const [key, label] of [['all', 'הכל'], ...Object.entries(VIEWS)]) {
+      const chip = el('button', `chip${key === view ? ' on' : ''}`, label);
+      chip.onclick = () => { projectView = key; renderProjects(); };
+      chips.append(chip);
+    }
+    container.append(chips);
+  }
+  if (view !== 'all') {
+    groups.replaceChildren();
+    doneCount = 0;
+    if (!renderViewTodos(groups, todos, view, { showProject: false })) {
+      groups.append(el('p', 'empty', VIEW_EMPTY[view]));
+    }
+  }
+  container.append(groups);
   if (!todos.length) container.append(el('p', 'empty', 'אין עדיין משימות בפרויקט'));
   if (doneCount) {
     const details = el('details', 'completed');
@@ -1274,7 +1302,7 @@ function projectRow(project) {
   const pie = el('span', 'pie');
   pie.style.setProperty('--p', todos.length ? Math.round(100 * (todos.length - open) / todos.length) : 0);
   row.append(pie, el('span', 'name', project.name), el('span', 'count', open ? String(open) : ''));
-  row.onclick = () => { currentProject = project.id; renderProjects(); scrollTo(0, 0); };
+  row.onclick = () => { currentProject = project.id; projectView = 'all'; renderProjects(); scrollTo(0, 0); };
   return row;
 }
 
@@ -1691,6 +1719,7 @@ function showTaskView(view) {
 }
 
 function showProject(id) {
+  if (id !== currentProject) projectView = 'all';
   currentProject = id;
   renderProjects();
   showScreen('projects');
