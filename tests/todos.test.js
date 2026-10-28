@@ -95,6 +95,18 @@ test('tasks group into today (with overdue), tomorrow, this week, this month, la
   assert.equal(store.addDays('2026-03-01', -1), '2026-02-28');
 });
 
+test('tasks in a group sort by date, then time, with untimed tasks last on their day', () => {
+  const t = (id, when, remindAt) => ({ id, title: id, done: false, when, ...(remindAt && { remindAt }) });
+  const todos = [
+    t('plain', '2026-10-23'), t('late', '2026-10-23', '2026-10-23T15:00:00.000Z'), t('early', '2026-10-23', '2026-10-23T07:00:00.000Z'),
+    t('overdue', '2026-10-21'), t('overdueTimed', '2026-10-22', '2026-10-22T09:00:00.000Z'),
+    t('tomPlain', '2026-10-24'), t('tomTimed', '2026-10-24', '2026-10-24T08:00:00.000Z'),
+  ];
+  const groups = store.groupTodos(todos, '2026-10-23');
+  assert.deepEqual(groups.today.map(x => x.id), ['overdue', 'overdueTimed', 'early', 'late', 'plain']);
+  assert.deepEqual(groups.tomorrow.map(x => x.id), ['tomTimed', 'tomPlain']);
+});
+
 test('updating a task keeps its title when the new one is blank', () => {
   const state = store.createState(seed);
   const todo = store.addTodo(state, 'משימה');

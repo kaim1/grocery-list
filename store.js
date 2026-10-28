@@ -155,8 +155,10 @@ export function groupTodos(todos, today) {
     else if (when <= month) groups.month.push(todo);
     else groups.later.push(todo);
   }
-  const byDate = (a, b) => a.when.localeCompare(b.when);
-  for (const key of ['today', 'week', 'month', 'later']) groups[key].sort(byDate);
+  // By date, then by reminder time; on the same date, tasks without a time come last.
+  const byDate = (a, b) => (DATE.test(a.when) && DATE.test(b.when) ? a.when.localeCompare(b.when) : 0)
+    || (a.remindAt ? b.remindAt ? a.remindAt.localeCompare(b.remindAt) : -1 : b.remindAt ? 1 : 0);
+  for (const key of Object.keys(groups)) groups[key].sort(byDate);
   return groups;
 }
 
