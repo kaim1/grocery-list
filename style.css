@@ -343,6 +343,32 @@ details.category > summary h2 { margin: 1.4rem 0 .25rem; }
 .toast-texts { display: grid; gap: .1rem; min-width: 0; }
 #toast-sub { font-size: .78rem; opacity: .75; }
 
+/* several tasks picked at once: the rows tint and a bar of actions replaces the tabs */
+.todo-row { -webkit-touch-callout: none; }
+body.selecting .todo-row { user-select: none; -webkit-user-select: none; }
+.todo-row.picked {
+  background: var(--accent-soft); border-radius: 12px; padding-inline: .6rem; margin-inline: -.6rem;
+}
+body.selecting .tabbar, body.selecting .pill { visibility: hidden; }
+body.selecting .toast { bottom: calc(8.2rem + env(safe-area-inset-bottom) + var(--keyboard)); }
+.pick-bar {
+  position: fixed; z-index: 6; inset-inline: max(.75rem, env(safe-area-inset-left));
+  bottom: calc(.6rem + env(safe-area-inset-bottom));
+  max-width: 640px; margin: 0 auto;
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .2rem .9rem;
+  background: var(--surface); border-radius: 18px; box-shadow: var(--float); padding: .55rem .9rem .35rem;
+}
+.pick-count { font-size: .9rem; font-weight: 700; }
+.pick-bar .link-button { font-size: .85rem; padding: .2rem 0; justify-self: start; }
+#pick-cancel { grid-column: 3; justify-self: end; color: var(--muted); }
+.pick-actions { grid-column: 1 / -1; display: flex; margin-inline: -.4rem; }
+.pick-actions button {
+  flex: 1; display: grid; justify-items: center; gap: .15rem; border: 0; background: transparent;
+  color: var(--ink); font-size: .68rem; font-weight: 500; padding: .35rem 0; border-radius: 10px;
+}
+.pick-actions svg { width: 1.35rem; height: 1.35rem; color: var(--accent); }
+.pick-actions .danger, .pick-actions .danger svg { color: var(--danger); }
+
 /* bottom sheet */
 #sheet {
   border: 0; padding: 0; margin: 0 auto auto;
@@ -472,6 +498,17 @@ details.category > summary h2 { margin: 1.4rem 0 .25rem; }
   .composer { bottom: 1.4rem; }
   .composer-dim { background: transparent; }
   .toast { bottom: 6rem; }
+  .pick-bar {
+    inset-inline-start: calc(var(--side) + 2.5rem); inset-inline-end: calc(var(--pane) + 2.5rem); bottom: 1.4rem;
+    display: flex; gap: .9rem; padding: .45rem .55rem .45rem; padding-inline-start: 1.1rem;
+  }
+  .pick-actions { order: 3; margin: 0; margin-inline-start: auto; gap: .15rem; flex: none; }
+  .pick-actions button { display: flex; align-items: center; gap: .35rem; font-size: .85rem; padding: .45rem .7rem; }
+  .pick-actions svg { width: 1.05rem; height: 1.05rem; }
+  .pick-actions button:hover { background: var(--hover); }
+  #pick-cancel { order: 4; padding-inline: .4rem; }
+  body.selecting .toast { bottom: 6rem; }
+  body.selecting .todo-row.sel:not(.picked) { background: transparent; }
 
   .sidebar {
     display: flex; flex-direction: column; gap: 2px; position: fixed; z-index: 6; inset-block: 0; inset-inline-start: 0;

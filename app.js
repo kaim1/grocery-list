@@ -44,6 +44,8 @@ export function showScreen(name) {
     if (name !== 'list' && !document.getElementById('catalog').hidden) closeCatalog();
     closePane();
   }
+  picked.clear();
+  syncPicked();
   renderSidebar();
   hideToast();
   scrollTo(0, 0);
@@ -57,6 +59,7 @@ function render() {
   if (!document.getElementById('catalog').hidden) renderCatalog();
   renderSidebar();
   refreshPane();
+  syncPicked();
   updateMiniHead();
 }
 
@@ -145,6 +148,7 @@ function swipeable(row, label, onDelete) {
   let startX = 0, startY = 0, dx = 0, base = 0, tracking = false, dragging = false;
   row.addEventListener('pointerdown', e => {
     if (e.pointerType === 'mouse' && (e.button !== 0 || isDesk())) return;
+    if (selecting()) return;
     if (openSwipe && openSwipe !== wrap) closeOpenSwipe();
     startX = e.clientX; startY = e.clientY; dx = 0;
     base = wrap.classList.contains('open') ? OPEN : 0;
@@ -489,13 +493,28 @@ function projectName(id) {
 }
 
 function todoRow(todo, group, options = {}) {
-  const row = el('div', `row todo-row${todo.done ? ' done' : ''}${isDesk() && todo.id === selectedId ? ' sel' : ''}`);
+  const row = el('div', `row todo-row${todo.done ? ' done' : ''}${isDesk() && todo.id === selectedId ? ' sel' : ''}${picked.has(todo.id) ? ' picked' : ''}`);
   row.dataset.id = todo.id;
   if (isDesk()) {
     row.draggable = true;
     row.ondragstart = e => { e.dataTransfer.setData('text/x-todo', todo.id); e.dataTransfer.effectAllowed = 'move'; };
     row.oncontextmenu = e => { e.preventDefault(); openContextMenu(todo, row, e.clientX, e.clientY); };
+  } else if (!todo.done) {
+    onLongPress(row, () => togglePick(todo.id));
   }
+  // While picking, a tap on the phone (or ⌘/Shift-click on the desktop) picks the row instead of opening or checking it.
+  row.addEventListener('click', e => {
+    const desk = isDesk();
+    const multi = desk && (e.metaKey || e.ctrlKey || e.shiftKey);
+    if (todo.done || !(multi || (!desk && selecting()))) {
+      if (desk && selecting()) clearPicked();
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    if (desk && e.shiftKey) pickRange(todo.id);
+    else togglePick(todo.id);
+  }, true);
   const check = checkbox(`${todo.done ? 'פתיחה מחדש' : 'סיום'}: ${todo.title}`, todo.done, done => {
     const next = store.setTodoDone(state, todo.id, done);
     if (done) {
@@ -1334,6 +1353,7 @@ function renderProjects() {
     details.append(summary, completedList);
     container.append(details);
   }
+  syncPicked();
 }
 
 function projectRow(project) {
@@ -1828,8 +1848,20 @@ function dropTarget(target, fields) {
     const todo = state.todos.find(t => t.id === e.dataTransfer.getData('text/x-todo'));
     if (!todo) return;
     e.preventDefault();
+    // Dragging one of several picked tasks moves them all.
+    if (picked.has(todo.id) && picked.size > 1) {
+      return changePicked(t => store.updateTodo(state, t.id, fields(t)),
+        n => `${count(n, 'משימה אחת הועברה', 'משימות הועברו')} ${whereLabel(fields(todo))}`.trim());
+    }
     changeTodo(todo, fields(todo), 'הועברה');
   });
+}
+
+// "למחר", "למתישהו", "לשיפוץ".
+function whereLabel(fields) {
+  if (fields.projectId) return `ל${projectName(fields.projectId)}`;
+  if (!('when' in fields)) return '';
+  return store.DATE.test(fields.when) ? toDay(fields.when) : `ל${whenLabel(fields.when)}`;
 }
 
 // A quick change from the menu, the keyboard or a drag, with an undo toast.
@@ -1837,10 +1869,103 @@ function changeTodo(todo, fields, message) {
   const before = Object.fromEntries(Object.keys(fields).map(k => [k, todo[k] ?? null]));
   store.updateTodo(state, todo.id, fields);
   saveAndRender();
-  const where = fields.projectId ? `ל${projectName(fields.projectId)}`
-    : 'when' in fields ? (store.DATE.test(fields.when) ? toDay(fields.when) : `ל${whenLabel(fields.when)}`) : '';
-  showToast(`${message} ${where}`.trim(), () => store.updateTodo(state, todo.id, before));
+  showToast(`${message} ${whereLabel(fields)}`.trim(), () => store.updateTodo(state, todo.id, before));
 }
+
+// ---------- several tasks at once ----------
+
+// Tasks picked for one action: a long press on the phone starts picking, ⌘ or Shift-click on the desktop.
+const picked = new Set();
+const selecting = () => picked.size > 0;
+const pickableRows = () => visibleRows().filter(r => !r.closest('[hidden]'));
+
+function togglePick(id) {
+  // ⌘-click adds to the task already selected with the keyboard or the pane.
+  if (!picked.size && isDesk() && selectedId && selectedId !== id && pickableRows().some(r => r.dataset.id === selectedId)) {
+    picked.add(selectedId);
+  }
+  if (picked.has(id)) picked.delete(id);
+  else picked.add(id);
+  pickAnchor = id;
+  if (picked.size && isDesk()) closePane();
+  syncPicked();
+}
+
+// Shift-click picks every visible task between the last picked one and this one.
+let pickAnchor = null;
+function pickRange(id) {
+  const ids = pickableRows().map(r => r.dataset.id);
+  const from = ids.indexOf(picked.has(pickAnchor) ? pickAnchor : selectedId);
+  const to = ids.indexOf(id);
+  if (from === -1 || to === -1) return togglePick(id);
+  for (const x of ids.slice(Math.min(from, to), Math.max(from, to) + 1)) picked.add(x);
+  if (isDesk()) closePane();
+  syncPicked();
+}
+
+function pickAll() {
+  for (const row of pickableRows()) picked.add(row.dataset.id);
+  syncPicked();
+}
+
+function clearPicked() {
+  if (!picked.size) return;
+  picked.clear();
+  syncPicked();
+}
+
+// Drops picks that are no longer on screen, then shows the rows and the bar as they are.
+function syncPicked() {
+  const shown = new Set(pickableRows().map(r => r.dataset.id));
+  for (const id of picked) if (!shown.has(id)) picked.delete(id);
+  for (const row of document.querySelectorAll('.todo-row')) {
+    row.classList.toggle('picked', picked.has(row.dataset.id));
+  }
+  document.body.classList.toggle('selecting', selecting());
+  const bar = document.getElementById('pick-bar');
+  bar.hidden = !selecting();
+  if (!selecting()) return;
+  document.getElementById('pick-count').textContent = count(picked.size, 'משימה אחת נבחרה', 'נבחרו');
+  document.getElementById('pick-all').hidden = shown.size === picked.size;
+}
+
+// Applies one change to every picked task, with one undo for all of them.
+function changePicked(apply, message) {
+  const todos = state.todos.filter(t => picked.has(t.id));
+  if (!todos.length) return clearPicked();
+  const before = structuredClone(state.todos);
+  for (const todo of todos) apply(todo);
+  picked.clear();
+  saveAndRender();
+  showToast(message(todos.length), () => { state.todos = before; });
+}
+
+// The value every picked task shares, so the picker can mark it; otherwise null.
+function sharedValue(key) {
+  const values = new Set(state.todos.filter(t => picked.has(t.id)).map(t => t[key] || null));
+  return values.size === 1 ? [...values][0] : null;
+}
+
+const pickActions = {
+  when: when => changePicked(t => store.updateTodo(state, t.id, { when }),
+    n => `${count(n, 'משימה אחת הועברה', 'משימות הועברו')} ${whereLabel({ when })}`),
+  pickWhen: () => pickWhen(sharedValue('when'), when => { closeSheet(); pickActions.when(when); }),
+  project: () => pickProject(sharedValue('projectId'), projectId => {
+    closeSheet();
+    changePicked(t => store.updateTodo(state, t.id, { projectId }),
+      n => projectId ? `${count(n, 'משימה אחת הועברה', 'משימות הועברו')} ${whereLabel({ projectId })}`
+        : count(n, 'משימה אחת הוצאה מהפרויקט', 'משימות הוצאו מהפרויקט'));
+  }),
+  done: () => changePicked(t => store.setTodoDone(state, t.id, true), n => count(n, 'משימה אחת סומנה כבוצעה', 'משימות סומנו כבוצעו')),
+  remove: () => changePicked(t => store.deleteTodo(state, t.id), n => count(n, 'משימה אחת נמחקה', 'משימות נמחקו')),
+};
+
+document.getElementById('pick-all').onclick = pickAll;
+document.getElementById('pick-cancel').onclick = clearPicked;
+document.getElementById('pick-when').onclick = pickActions.pickWhen;
+document.getElementById('pick-project').onclick = pickActions.project;
+document.getElementById('pick-done').onclick = pickActions.done;
+document.getElementById('pick-delete').onclick = pickActions.remove;
 
 // ---------- desktop: right-click menu ----------
 
@@ -1920,6 +2045,8 @@ const SHORTCUTS = [
   ['T  M', 'להיום, למחר'],
   ['D', 'בחירת תאריך'],
   ['⌫', 'מחיקה'],
+  ['⌘ / Shift + קליק', 'בחירת כמה משימות'],
+  ['⌘A', 'בחירת כל המשימות שבמסך'],
   ['⌘Z', 'ביטול הפעולה האחרונה'],
   ['1–7', 'היום, מחר, השבוע, החודש, בהמשך, מתישהו, קניות'],
   ['Esc', 'סגירה'],
@@ -1955,6 +2082,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (!menu.hidden) { closeContextMenu(); return; }
     if (sheetOpen || typing) return;
+    if (selecting()) { clearPicked(); return; }
     if (!document.getElementById('pane').hidden) { closePane(); return; }
     if (!document.getElementById('catalog').hidden) { closeCatalog(); return; }
     if (selectedId) { selectedId = null; markSelected(); }
@@ -1973,6 +2101,11 @@ document.addEventListener('keydown', e => {
     if (!document.getElementById('toast').hidden && !undo.hidden) { e.preventDefault(); undo.click(); }
     return;
   }
+  if ((e.metaKey || e.ctrlKey) && e.code === 'KeyA' && (screen === 'todos' || screen === 'projects')) {
+    e.preventDefault();
+    pickAll();
+    return;
+  }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   // Physical keys, so the shortcuts also work with the Hebrew layout.
   const selected = state?.todos.find(t => t.id === selectedId && visibleRows().some(r => r.dataset.id === t.id));
@@ -1985,13 +2118,24 @@ document.addEventListener('keydown', e => {
     return act(() => (n === 7 ? showScreen('list') : showTaskView(views[n - 1])));
   }
   if (e.code === 'KeyN' || (e.code === 'Slash' && screen === 'list')) {
+    clearPicked();
     if (screen === 'list') return act(() => openCatalog(false));
     if (screen === 'todos' || (screen === 'projects' && currentProject)) {
       return act(() => document.querySelector('.pill:not([hidden])').click());
     }
     return;
   }
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') return act(() => moveSelection(e.key === 'ArrowDown' ? 1 : -1));
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') return act(() => { clearPicked(); moveSelection(e.key === 'ArrowDown' ? 1 : -1); });
+  // With several tasks picked the same keys act on all of them.
+  if (selecting()) {
+    anchor = document.getElementById('pick-when');
+    if (e.code === 'KeyT') return act(() => pickActions.when(today()));
+    if (e.code === 'KeyM') return act(() => pickActions.when(store.addDays(today(), 1)));
+    if (e.code === 'KeyD') return act(pickActions.pickWhen);
+    if (e.code === 'Space') return act(pickActions.done);
+    if (e.key === 'Backspace' || e.key === 'Delete') return act(pickActions.remove);
+    return;
+  }
   if (!selected) return;
   const a = todoActions(selected);
   anchor = row;

@@ -91,6 +91,18 @@
   <button id="btn-new-todo" class="pill" data-screen="todos">משימה חדשה</button>
   <button id="btn-new-project" class="pill" data-screen="projects" hidden>פרויקט חדש</button>
 
+  <div id="pick-bar" class="pick-bar" role="toolbar" aria-label="פעולות על המשימות שנבחרו" hidden>
+    <span id="pick-count" class="pick-count" aria-live="polite"></span>
+    <button id="pick-all" class="link-button">בחירת הכל</button>
+    <button id="pick-cancel" class="link-button">ביטול</button>
+    <div class="pick-actions">
+      <button id="pick-when"><svg><use href="#i-cal"/></svg>מתי</button>
+      <button id="pick-project"><svg><use href="#i-folder"/></svg>פרויקט</button>
+      <button id="pick-done"><svg><use href="#i-check"/></svg>בוצע</button>
+      <button id="pick-delete" class="danger"><svg><use href="#i-trash"/></svg>מחיקה</button>
+    </div>
+  </div>
+
   <div id="composer" class="composer-layer" hidden>
     <div id="composer-dim" class="composer-dim"></div>
     <form id="composer-form" class="composer" autocomplete="off">
