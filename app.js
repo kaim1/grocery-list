@@ -207,29 +207,70 @@ function renderList() {
   container.textContent = '';
   const byId = new Map(state.items.map(i => [i.id, i]));
   const entries = state.list.map(e => ({ ...e, item: byId.get(e.itemId) }));
+  const left = entries.filter(e => !e.bought).length;
   document.getElementById('list-empty').hidden = entries.length > 0;
-  document.getElementById('list-sub').textContent = entries.length ? count(entries.length, 'מוצר אחד לקנות', 'מוצרים לקנות') : '';
+  document.getElementById('list-sub').textContent = left ? count(left, 'מוצר אחד לקנות', 'מוצרים לקנות') : '';
 
   for (const cat of store.sortedCategories(state)) {
     const inCat = entries.filter(e => e.item.categoryId === cat.id);
     if (!inCat.length) continue;
     const wrap = section(cat.name);
-    for (const e of inCat) wrap.append(listRow(e));
+    const chips = el('div', 'chips');
+    for (const e of inCat) chips.append(listChip(e));
+    wrap.append(chips);
     container.append(wrap);
+  }
+
+  const bought = entries.length - left;
+  if (bought) {
+    const line = el('div', 'cart-line');
+    const clear = el('button', 'link-button', 'ניקוי מהרשימה');
+    clear.onclick = clearBought;
+    line.append(el('span', '', count(bought, 'מוצר אחד בעגלה', 'מוצרים בעגלה')), clear);
+    container.append(line);
   }
 }
 
-function listRow(entry) {
-  const row = el('div', 'row');
-  const check = checkbox(`קניתי: ${entry.item.name}`, false, () => {
-    store.checkOff(state, entry.itemId); saveAndRender();
+// Tap marks the item as bought (it stays in place); a long press or right-click opens its quantity.
+function listChip(entry) {
+  const chip = el('button', 'chip list-chip');
+  chip.classList.toggle('bought', !!entry.bought);
+  chip.setAttribute('aria-pressed', String(!!entry.bought));
+  chip.setAttribute('aria-label', `${entry.item.name}${entry.qty > 1 ? `, ${entry.qty}` : ''}`);
+  if (entry.bought) chip.append(icon('tick'));
+  if (entry.qty > 1) chip.append(el('span', 'qty-badge', String(entry.qty)));
+  chip.append(el('span', 'chip-name', entry.item.name));
+  chip.onclick = () => { store.toggleBought(state, entry.itemId); saveAndRender(); };
+  onLongPress(chip, () => openQtySheet(entry.item));
+  return chip;
+}
+
+function onLongPress(node, fn) {
+  let timer, fired = false, x0 = 0, y0 = 0;
+  const cancel = () => clearTimeout(timer);
+  node.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    fired = false; x0 = e.clientX; y0 = e.clientY;
+    timer = setTimeout(() => { fired = true; navigator.vibrate?.(10); fn(); }, 450);
   });
-  const name = el('button', 'name', entry.item.name);
-  name.setAttribute('aria-label', `כמות: ${entry.item.name}`);
-  name.onclick = () => openQtySheet(entry.item);
-  const qty = el('span', 'qty-label', String(entry.qty));
-  row.append(check, name, qty);
-  return swipeable(row, 'הסרה', () => removeFromList(entry.item));
+  node.addEventListener('pointermove', e => { if (Math.hypot(e.clientX - x0, e.clientY - y0) > 10) cancel(); });
+  for (const type of ['pointerup', 'pointercancel', 'pointerleave']) node.addEventListener(type, cancel);
+  // The click that ends a long press must not also toggle the chip.
+  node.addEventListener('click', e => {
+    if (fired) { e.stopImmediatePropagation(); e.preventDefault(); fired = false; }
+  }, true);
+  node.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    cancel();
+    if (!fired) { fired = true; fn(); }
+  });
+}
+
+function clearBought() {
+  const removed = store.clearBought(state);
+  if (!removed.length) return;
+  saveAndRender();
+  showToast(count(removed.length, 'מוצר אחד הוסר', 'מוצרים הוסרו'), () => store.restoreBought(state, removed));
 }
 
 function removeFromList(item) {
@@ -262,9 +303,11 @@ function openQtySheet(item) {
     edit.onclick = () => openItemEditor(item);
     const done = el('button', 'btn-pill', 'סיום');
     done.onclick = closeSheet;
+    const remove = el('button', 'btn-danger-text', 'הסרה מהרשימה');
+    remove.onclick = () => { closeSheet(); removeFromList(item); };
     const footer = el('div', 'sheet-footer');
     footer.append(edit, done);
-    body.append(el('div', 'sheet-title', item.name), stepper, footer);
+    body.append(el('div', 'sheet-title', item.name), stepper, footer, remove);
   });
 }
 
@@ -1743,7 +1786,7 @@ function renderSidebar() {
       todo => ({ when: viewWhenFor(view, todo) })));
   }
   items.push(el('div', 'side-sep'));
-  items.push(item('קניות', 'cart', state.list.length, screen === 'list', () => showScreen('list')));
+  items.push(item('קניות', 'cart', state.list.filter(e => !e.bought).length, screen === 'list', () => showScreen('list')));
   const head = el('div', 'side-label');
   const all = el('button', '', 'פרויקטים');
   all.onclick = () => showProject(null);

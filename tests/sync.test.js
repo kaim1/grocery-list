@@ -83,3 +83,15 @@ test('projects created on two devices are both kept', () => {
   const merged = mergeDocuments(base, local, remote);
   assert.deepEqual(new Set(merged.projects.map(p => p.id)), new Set(['p1', 'p2']));
 });
+
+test('marking and unmarking an item as bought both reach the other device', () => {
+  const base = doc(), local = doc(), remote = doc();
+  base.list = [{ itemId: 'i', qty: 2, bought: true }];
+  local.list = [{ itemId: 'i', qty: 2, bought: false }];
+  remote.list = [{ itemId: 'i', qty: 2, bought: true }];
+  assert.equal(mergeDocuments(base, local, remote).list[0].bought, false);
+  base.list = [{ itemId: 'i', qty: 2 }];
+  local.list = [{ itemId: 'i', qty: 2, bought: true }];
+  remote.list = [{ itemId: 'i', qty: 3 }];
+  assert.deepEqual(mergeDocuments(base, local, remote).list, [{ itemId: 'i', qty: 3, bought: true }]);
+});

@@ -89,7 +89,6 @@ main {
   font-size: .72rem; color: var(--faint); font-variant-numeric: tabular-nums;
 }
 .row .meta svg { width: .75rem; height: .75rem; }
-.row .qty-label { flex: none; font-size: .85rem; color: var(--faint); font-variant-numeric: tabular-nums; min-width: 1.2rem; text-align: end; }
 
 /* swipe to delete: the row becomes a rounded card over a soft red strip */
 .swipe { position: relative; border-radius: 14px; }
@@ -271,6 +270,23 @@ details.category > summary h2 { margin: 1.4rem 0 .25rem; }
 .chip svg { width: .85rem; height: .85rem; }
 .chip.on-list, .chip.on { background: var(--accent); color: var(--accent-ink); }
 .chip.soft-on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.list-chip {
+  background: var(--surface); box-shadow: 0 1px 2px rgba(23, 33, 27, .08);
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: manipulation;
+}
+.qty-badge {
+  min-width: 1.3rem; height: 1.3rem; padding-inline: .3rem; border-radius: 999px;
+  background: var(--accent); color: #fff; font-size: .75rem; font-weight: 700;
+  font-variant-numeric: tabular-nums; display: inline-grid; place-items: center; margin-inline-start: -.4rem;
+}
+.list-chip.bought { background: var(--field); box-shadow: none; color: var(--faint); }
+.list-chip.bought .chip-name { text-decoration: line-through; }
+.list-chip.bought svg { color: var(--accent); margin-inline-start: -.25rem; }
+.list-chip.bought .qty-badge { background: var(--ring); margin-inline-start: 0; }
+.cart-line {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  margin-top: 1.4rem; font-size: .9rem; color: var(--muted);
+}
 .add-new { background: transparent; border: 1.5px dashed var(--ring); color: var(--muted); }
 
 .results { display: grid; }
@@ -479,7 +495,7 @@ details.category > summary h2 { margin: 1.4rem 0 .25rem; }
   .side-grow { flex: 1; }
 
   /* Rows highlight under the pointer and when selected. */
-  .todo-row, #screen-list .row { border-radius: 10px; padding-inline: .6rem; margin-inline: -.6rem; }
+  .todo-row { border-radius: 10px; padding-inline: .6rem; margin-inline: -.6rem; }
   .todo-row.sel { background: var(--accent-soft); }
   .todo-row[draggable=true] { cursor: default; }
 
@@ -539,7 +555,7 @@ details.category > summary h2 { margin: 1.4rem 0 .25rem; }
   .keys kbd { justify-self: start; font-size: .78rem; color: var(--muted); }
 }
 @media (min-width: 760px) and (hover: hover) {
-  .todo-row:not(.sel):hover, #screen-list .row:hover { background: var(--hover); }
+  .todo-row:not(.sel):hover { background: var(--hover); }
 }
 @media (min-width: 1100px) {
   body.pane-open, body.catalog-open { --pane: 372px; }

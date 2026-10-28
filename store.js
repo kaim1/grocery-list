@@ -40,6 +40,38 @@ export function checkOff(state, itemId) {
   removeFromList(state, itemId);
 }
 
+// A bought item stays on the list, marked, until the cart is cleared.
+// Unmarking stores false rather than dropping the field, so the change survives a sync merge.
+export function setBought(state, itemId, bought) {
+  const entry = state.list.find(e => e.itemId === itemId);
+  if (entry) entry.bought = Boolean(bought);
+}
+
+export function toggleBought(state, itemId) {
+  const entry = state.list.find(e => e.itemId === itemId);
+  if (entry) setBought(state, itemId, !entry.bought);
+}
+
+// Checks off every bought item for real and returns what undo needs to put them back.
+export function clearBought(state) {
+  const removed = [];
+  state.list.forEach((entry, index) => {
+    if (!entry.bought) return;
+    const lastQty = state.items.find(i => i.id === entry.itemId)?.lastQty;
+    removed.push({ entry: { ...entry }, index, lastQty });
+  });
+  for (const { entry } of removed) checkOff(state, entry.itemId);
+  return removed;
+}
+
+export function restoreBought(state, removed) {
+  for (const { entry, index, lastQty } of removed) {
+    restoreListEntry(state, entry, index);
+    const item = state.items.find(i => i.id === entry.itemId);
+    if (item && lastQty != null) item.lastQty = lastQty;
+  }
+}
+
 export function createItem(state, name, categoryId) {
   const trimmed = name.trim();
   const existing = state.items.find(i => i.categoryId === categoryId && i.name === trimmed);
@@ -275,6 +307,7 @@ function isValidDoc(doc) {
     typeof i.id === 'string' && typeof i.name === 'string' &&
     doc.categories.some(c => c.id === i.categoryId));
   const listOk = doc.list.every(e =>
-    typeof e.itemId === 'string' && typeof e.qty === 'number');
+    typeof e.itemId === 'string' && typeof e.qty === 'number' &&
+    (e.bought === undefined || typeof e.bought === 'boolean'));
   return catOk && itemOk && listOk;
 }

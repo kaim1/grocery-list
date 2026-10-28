@@ -151,3 +151,64 @@ test('load drops orphan list entries but flags orphan items as corrupt', () => {
   const r2 = store.load(JSON.stringify(bad), seed);
   assert.equal(r2.corrupt, true);
 });
+
+test('toggleBought marks and unmarks a list entry, keeping it on the list', () => {
+  const s = fresh();
+  const id = idOf(s, 'חלב');
+  store.addToList(s, id);
+  assert.equal(s.list[0].bought, undefined);
+  store.toggleBought(s, id);
+  assert.equal(s.list[0].bought, true);
+  assert.ok(store.isOnList(s, id));
+  store.toggleBought(s, id);
+  assert.equal(s.list[0].bought, false);
+});
+
+test('clearBought checks off only bought items and remembers their quantity', () => {
+  const s = fresh();
+  const milk = idOf(s, 'חלב'), cuc = idOf(s, 'מלפפונים');
+  store.addToList(s, cuc);
+  store.addToList(s, milk);
+  store.setQty(s, milk, 3);
+  store.setBought(s, milk, true);
+  const removed = store.clearBought(s);
+  assert.equal(removed.length, 1);
+  assert.deepEqual(s.list.map(e => e.itemId), [cuc]);
+  assert.equal(s.items.find(i => i.id === milk).lastQty, 3);
+});
+
+test('restoreBought undoes clearBought, including the old lastQty', () => {
+  const s = fresh();
+  const milk = idOf(s, 'חלב'), cuc = idOf(s, 'מלפפונים');
+  store.addToList(s, milk);
+  store.addToList(s, cuc);
+  store.setQty(s, milk, 4);
+  store.setBought(s, milk, true);
+  const removed = store.clearBought(s);
+  store.restoreBought(s, removed);
+  assert.deepEqual(s.list.map(e => e.itemId), [milk, cuc]);
+  assert.equal(s.list[0].bought, true);
+  assert.equal(s.list[0].qty, 4);
+  assert.equal(s.items.find(i => i.id === milk).lastQty, 1);
+});
+
+test('re-adding a cleared item starts unbought', () => {
+  const s = fresh();
+  const milk = idOf(s, 'חלב');
+  store.addToList(s, milk);
+  store.setBought(s, milk, true);
+  store.clearBought(s);
+  store.addToList(s, milk);
+  assert.ok(!s.list[0].bought);
+});
+
+test('load accepts an optional boolean bought flag and rejects other types', () => {
+  const s = fresh();
+  store.addToList(s, idOf(s, 'חלב'));
+  store.setBought(s, s.list[0].itemId, true);
+  const ok = store.load(store.serialize(s), seed);
+  assert.equal(ok.corrupt, false);
+  assert.equal(ok.state.list[0].bought, true);
+  s.list[0].bought = 'yes';
+  assert.equal(store.load(store.serialize(s), seed).corrupt, true);
+});
