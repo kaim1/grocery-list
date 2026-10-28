@@ -44,6 +44,7 @@ export function showScreen(name) {
     if (name !== 'list' && !document.getElementById('catalog').hidden) closeCatalog();
     closePane();
   }
+  document.body.classList.toggle('board-on', isDesk() && name === 'todos' && taskView === 'board');
   picked.clear();
   syncPicked();
   renderSidebar();
@@ -360,7 +361,9 @@ const longToday = () => new Date().toLocaleDateString('he-IL', { weekday: 'long'
 
 function renderTodos() {
   const view = isDesk() ? taskView : null;
-  document.querySelector('#screen-todos .page-title').textContent = view ? VIEWS[view] : 'משימות';
+  document.body.classList.toggle('board-on', view === 'board');
+  document.querySelector('#screen-todos .page-title').textContent = view === 'board' ? 'לוח' : view ? VIEWS[view] : 'משימות';
+  if (view === 'board') return renderBoard();
   document.querySelector('#todos-completed summary span').textContent = view ? 'הושלמו היום' : 'הושלמו';
   if (view) return renderTaskView(view);
   document.getElementById('todos-empty').textContent = 'אין משימות פתוחות';
@@ -392,6 +395,34 @@ function renderTaskView(view) {
   for (const todo of done) completedContainer.append(todoRow(todo, 'done', { showProject: true }));
   document.getElementById('todos-completed').hidden = done.length === 0;
   document.getElementById('todos-completed-count').textContent = done.length;
+}
+
+// The board: every view side by side, one column each. Dropping a task on a column moves it there.
+function renderBoard() {
+  const container = document.getElementById('todos-container');
+  document.getElementById('todos-completed-container').replaceChildren();
+  document.getElementById('todos-completed').hidden = true;
+  document.getElementById('todos-empty').hidden = true;
+  const board = el('div', 'board');
+  let total = 0;
+  for (const [view, label] of Object.entries(VIEWS)) {
+    // Near a week's or month's end a range can hold no days (no החודש on 31.10), so it gets no column.
+    if (!store.groupTodos([{ when: viewFirstDay(view) }], today())[view].length) continue;
+    const col = el('div', `board-col board-${view}`);
+    const body = el('div', 'board-body');
+    const shown = renderViewTodos(body, looseTodos(), view, { showProject: true });
+    total += shown;
+    const head = el('div', 'board-head');
+    head.append(el('span', '', label), el('span', 'n', shown ? String(shown) : ''));
+    const add = el('button', 'board-add', '+ משימה');
+    add.onclick = () => composer.open(null, viewFirstDay(view));
+    body.append(add);
+    col.append(head, body);
+    dropTarget(col, todo => ({ when: viewWhenFor(view, todo) }), todo => store.groupTodos([todo], today())[view].length > 0);
+    board.append(col);
+  }
+  container.replaceChildren(board);
+  document.getElementById('todos-sub').textContent = total ? count(total, 'משימה אחת', 'משימות') : 'אין משימות פתוחות';
 }
 
 // Appends the open tasks of one desktop view to `container` and returns how many there were.
@@ -1032,7 +1063,7 @@ document.querySelector('#composer-form .addbtn').addEventListener('pointerdown',
 document.getElementById('composer-form').onsubmit = e => { e.preventDefault(); composer.submit(); };
 document.getElementById('composer-dim').onclick = () => composer.close();
 // On the desktop a new task starts in the view it was added from.
-const viewWhen = () => viewFirstDay(taskView);
+const viewWhen = () => taskView === 'board' ? today() : viewFirstDay(taskView);
 document.getElementById('btn-new-todo').onclick = () => composer.open(null, isDesk() ? viewWhen() : 'anytime');
 document.getElementById('todo-title').addEventListener('keydown', e => { if (e.key === 'Escape') composer.close(); });
 document.getElementById('composer-time').onclick = () => {
@@ -1773,7 +1804,7 @@ if (window.visualViewport) {
 
 // ---------- desktop: sidebar ----------
 
-const VIEW_ICONS = { today: 'sun', tomorrow: 'moon', week: 'cal', month: 'list', later: 'clock', someday: 'box' };
+const VIEW_ICONS = { today: 'sun', tomorrow: 'moon', week: 'cal', month: 'list', later: 'clock', someday: 'box', board: 'board' };
 
 function showTaskView(view) {
   taskView = view;
@@ -1805,6 +1836,7 @@ function renderSidebar() {
     items.push(item(label, VIEW_ICONS[view], groups[view].length, screen === 'todos' && taskView === view, () => showTaskView(view),
       todo => ({ when: viewWhenFor(view, todo) })));
   }
+  items.push(item('לוח', VIEW_ICONS.board, 0, screen === 'todos' && taskView === 'board', () => showTaskView('board')));
   items.push(el('div', 'side-sep'));
   items.push(item('קניות', 'cart', state.list.filter(e => !e.bought).length, screen === 'list', () => showScreen('list')));
   const head = el('div', 'side-label');
@@ -1836,7 +1868,8 @@ function viewWhenFor(view, todo) {
   return viewFirstDay(view);
 }
 
-function dropTarget(target, fields) {
+// `already` says a task is in this place now, so dropping it here changes nothing.
+function dropTarget(target, fields, already = () => false) {
   target.addEventListener('dragover', e => {
     if (!e.dataTransfer.types.includes('text/x-todo')) return;
     e.preventDefault();
@@ -1848,6 +1881,7 @@ function dropTarget(target, fields) {
     const todo = state.todos.find(t => t.id === e.dataTransfer.getData('text/x-todo'));
     if (!todo) return;
     e.preventDefault();
+    if (already(todo) && !(picked.has(todo.id) && picked.size > 1)) return;
     // Dragging one of several picked tasks moves them all.
     if (picked.has(todo.id) && picked.size > 1) {
       return changePicked(t => store.updateTodo(state, t.id, fields(t)),
@@ -2048,7 +2082,7 @@ const SHORTCUTS = [
   ['⌘ / Shift + קליק', 'בחירת כמה משימות'],
   ['⌘A', 'בחירת כל המשימות שבמסך'],
   ['⌘Z', 'ביטול הפעולה האחרונה'],
-  ['1–7', 'היום, מחר, השבוע, החודש, בהמשך, מתישהו, קניות'],
+  ['1–8', 'היום, מחר, השבוע, החודש, בהמשך, מתישהו, קניות, לוח'],
   ['Esc', 'סגירה'],
 ];
 
@@ -2113,9 +2147,9 @@ document.addEventListener('keydown', e => {
   const act = fn => { e.preventDefault(); fn(); };
   const views = Object.keys(VIEWS);
   if (e.key === '?') return act(openShortcuts);
-  if (/^Digit[1-7]$/.test(e.code)) {
+  if (/^Digit[1-8]$/.test(e.code)) {
     const n = Number(e.code.slice(5));
-    return act(() => (n === 7 ? showScreen('list') : showTaskView(views[n - 1])));
+    return act(() => (n === 7 ? showScreen('list') : showTaskView(n === 8 ? 'board' : views[n - 1])));
   }
   if (e.code === 'KeyN' || (e.code === 'Slash' && screen === 'list')) {
     clearPicked();

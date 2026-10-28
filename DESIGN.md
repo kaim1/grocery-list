@@ -64,6 +64,9 @@ implemented product.
 - Shortcuts use physical keys so they work in the Hebrew layout: N, ↑↓, Enter, Space,
   T, M, D, Backspace, ⌘Z, 1–7, Esc, ? (list in the app).
 - The shopping catalog opens as the left column; Enter adds the first match.
+- לוח (board, 2026-10-28): a sidebar item after מתישהו (key 8) shows the views as columns side by side.
+  Dragging a card to a column changes its date like dropping it on the sidebar view; a range with no days left
+  (החודש at a month's last week) has no column. Cards keep the row's click, right-click and keys.
 - Tasks have free-text notes (pane and phone edit sheet); a small page icon marks them in the row.
 
 ## Sources of truth
