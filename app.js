@@ -44,7 +44,7 @@ export function showScreen(name) {
     if (name !== 'list' && !document.getElementById('catalog').hidden) closeCatalog();
     closePane();
   }
-  document.body.classList.toggle('board-on', isDesk() && name === 'todos' && taskView === 'board');
+  syncBoardClass();
   picked.clear();
   syncPicked();
   renderSidebar();
@@ -361,9 +361,9 @@ const longToday = () => new Date().toLocaleDateString('he-IL', { weekday: 'long'
 
 function renderTodos() {
   const view = isDesk() ? taskView : null;
-  document.body.classList.toggle('board-on', view === 'board');
+  syncBoardClass();
   document.querySelector('#screen-todos .page-title').textContent = view === 'board' ? 'לוח' : view ? VIEWS[view] : 'משימות';
-  if (view === 'board') return renderBoard();
+  if (view === 'board') return renderTaskBoard();
   document.querySelector('#todos-completed summary span').textContent = view ? 'הושלמו היום' : 'הושלמו';
   if (view) return renderTaskView(view);
   document.getElementById('todos-empty').textContent = 'אין משימות פתוחות';
@@ -397,12 +397,24 @@ function renderTaskView(view) {
   document.getElementById('todos-completed-count').textContent = done.length;
 }
 
-// The board: every view side by side, one column each. Dropping a task on a column moves it there.
-function renderBoard() {
-  const container = document.getElementById('todos-container');
+// The board needs the whole width instead of the reading column.
+function syncBoardClass() {
+  const on = isDesk() && ((screen === 'todos' && taskView === 'board') || (screen === 'projects' && currentProject && projectView === 'board'));
+  document.body.classList.toggle('board-on', Boolean(on));
+}
+
+function renderTaskBoard() {
   document.getElementById('todos-completed-container').replaceChildren();
   document.getElementById('todos-completed').hidden = true;
   document.getElementById('todos-empty').hidden = true;
+  const [board, total] = renderBoard(looseTodos(), null, { showProject: true });
+  document.getElementById('todos-container').replaceChildren(board);
+  document.getElementById('todos-sub').textContent = total ? count(total, 'משימה אחת', 'משימות') : 'אין משימות פתוחות';
+}
+
+// The board: every view side by side, one column each. Dropping a task on a column moves it there.
+// Returns the board and how many open tasks it shows.
+function renderBoard(todos, projectId, options) {
   const board = el('div', 'board');
   let total = 0;
   for (const [view, label] of Object.entries(VIEWS)) {
@@ -410,19 +422,18 @@ function renderBoard() {
     if (!store.groupTodos([{ when: viewFirstDay(view) }], today())[view].length) continue;
     const col = el('div', `board-col board-${view}`);
     const body = el('div', 'board-body');
-    const shown = renderViewTodos(body, looseTodos(), view, { showProject: true });
+    const shown = renderViewTodos(body, todos, view, options);
     total += shown;
     const head = el('div', 'board-head');
     head.append(el('span', '', label), el('span', 'n', shown ? String(shown) : ''));
     const add = el('button', 'board-add', '+ משימה');
-    add.onclick = () => composer.open(null, viewFirstDay(view));
+    add.onclick = () => composer.open(projectId, viewFirstDay(view));
     body.append(add);
     col.append(head, body);
     dropTarget(col, todo => ({ when: viewWhenFor(view, todo) }), todo => store.groupTodos([todo], today())[view].length > 0);
     board.append(col);
   }
-  container.replaceChildren(board);
-  document.getElementById('todos-sub').textContent = total ? count(total, 'משימה אחת', 'משימות') : 'אין משימות פתוחות';
+  return [board, total];
 }
 
 // Appends the open tasks of one desktop view to `container` and returns how many there were.
@@ -1313,6 +1324,7 @@ function renderProjects() {
   document.getElementById('projects-head').hidden = !!project;
   if (!project) {
     currentProject = null;
+    syncBoardClass();
     pill.textContent = 'פרויקט חדש';
     pill.onclick = openNewProject;
     const active = store.sortedProjects(state).filter(p => !p.done);
@@ -1361,14 +1373,17 @@ function renderProjects() {
   const view = isDesk() ? projectView : 'all';
   if (isDesk() && todos.length) {
     const chips = el('div', 'chips project-views');
-    for (const [key, label] of [['all', 'הכל'], ...Object.entries(VIEWS)]) {
+    for (const [key, label] of [['all', 'הכל'], ...Object.entries(VIEWS), ['board', 'לוח']]) {
       const chip = el('button', `chip${key === view ? ' on' : ''}`, label);
       chip.onclick = () => { projectView = key; renderProjects(); };
       chips.append(chip);
     }
     container.append(chips);
   }
-  if (view !== 'all') {
+  if (view === 'board') {
+    groups.replaceChildren(renderBoard(todos, project.id, { showProject: false })[0]);
+    doneCount = 0;
+  } else if (view !== 'all') {
     groups.replaceChildren();
     doneCount = 0;
     if (!renderViewTodos(groups, todos, view, { showProject: false })) {
@@ -1376,6 +1391,7 @@ function renderProjects() {
     }
   }
   container.append(groups);
+  syncBoardClass();
   if (!todos.length) container.append(el('p', 'empty', 'אין עדיין משימות בפרויקט'));
   if (doneCount) {
     const details = el('details', 'completed');
@@ -1813,7 +1829,8 @@ function showTaskView(view) {
 }
 
 function showProject(id) {
-  if (id !== currentProject) projectView = 'all';
+  // The board stays on when moving between projects; a narrower view does not.
+  if (id !== currentProject && projectView !== 'board') projectView = 'all';
   currentProject = id;
   renderProjects();
   showScreen('projects');

@@ -67,6 +67,7 @@ implemented product.
 - לוח (board, 2026-10-28): a sidebar item after מתישהו (key 8) shows the views as columns side by side.
   Dragging a card to a column changes its date like dropping it on the sidebar view; a range with no days left
   (החודש at a month's last week) has no column. Cards keep the row's click, right-click and keys.
+  A project page has the same board as a לוח chip after its views; it stays on when switching projects.
 - Tasks have free-text notes (pane and phone edit sheet); a small page icon marks them in the row.
 
 ## Sources of truth
