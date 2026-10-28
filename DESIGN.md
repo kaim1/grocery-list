@@ -37,6 +37,8 @@ implemented product.
   common rules plus a custom one (on a calendar, or N days after checking).
   Checking one adds the next at once with an undo toast; a series has one open
   task at a time.
+- A long press on a task picks it; then taps pick more. A white bar replaces the tabs with
+  מתי, פרויקט, בוצע, מחיקה (one undo for all). On the desktop: ⌘/Shift-click, ⌘A, Esc.
 - Swiping a row left to right reveals a small rounded red button on a soft pink
   strip; a long swipe deletes. Every delete shows an undo toast.
 - Editing happens in bottom sheets with no cancel button; tap outside or drag
